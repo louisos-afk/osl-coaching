@@ -53,6 +53,8 @@ aside{background:var(--bg2);border-right:1px solid var(--line);padding:20px 14px
 input,select,textarea{background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:7px 9px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 input[type=number]{width:76px}
+button,a,.click,input,select,textarea{touch-action:manipulation}
+@media (max-width:820px){input,select,textarea{font-size:16px}}
 input[type=date]{color-scheme:dark}
 label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2)}
 /* Layout */
@@ -527,7 +529,8 @@ async function sportSettings(id, force) {
 async function events(id, from, to) { const r = await iv('GET', `athlete/${id}/events?oldest=${from}&newest=${to}`); (r || []).forEach(e => S.evIndex[e.id] = e); return r; }
 async function activities(id, from, to) {
   const k = `${id}|${from}|${to}`; if (S.actCache[k]) return S.actCache[k];
-  const r = await iv('GET', `athlete/${id}/activities?oldest=${from}&newest=${to}`); (r || []).forEach(a => S.actIndex[a.id] = a);
+  const r = ((await iv('GET', `athlete/${id}/activities?oldest=${from}&newest=${to}`)) || []).filter(a => !((a.moving_time || 0) < 120 || (sportOf(a.type) === 'Run' && (a.distance || 0) < 300)));
+  r.forEach(a => S.actIndex[a.id] = a);
   return S.actCache[k] = r;
 }
 
@@ -1184,7 +1187,7 @@ async function renderAna() {
 function chart(el, series, o = {}) {
   const all = series.flatMap(s => s.pts.filter(p => p.y != null));
   if (!all.length) { el.innerHTML = `<div class="muted small" style="padding:30px 0;text-align:center">${o.empty || 'Keine Daten im Zeitraum.'}</div>`; return; }
-  const Wd = o.w || 560, H = o.h || 220, L = 40, R = 12, T = 10, B = 26;
+  const cw = Math.round(el.clientWidth || 0), Wd = cw > 200 ? cw : (o.w || 560), H = o.h || (Wd < 500 ? 190 : 220), L = 40, R = 12, T = 10, B = 26;
   const xs = all.map(p => +p.x), x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
   let y0 = Math.min(...all.map(p => p.y)), y1 = Math.max(...all.map(p => p.y)); if (o.dots || y0 > 0 && y0 / y1 < 0.5) y0 = Math.min(0, y0);
   const pad = (y1 - y0) * 0.08 || 1; y1 += pad; if (y0 !== 0) y0 -= pad;

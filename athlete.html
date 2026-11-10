@@ -54,6 +54,8 @@ aside{background:var(--bg2);border-right:1px solid var(--line);padding:20px 14px
 input,select,textarea{background:var(--bg2);border:1px solid var(--line2);border-radius:8px;padding:7px 9px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 input[type=number]{width:76px}
+button,a,.click,input,select,textarea{touch-action:manipulation}
+@media (max-width:820px){input,select,textarea{font-size:16px}}
 input[type=date]{color-scheme:dark}
 label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2)}
 /* Layout */
@@ -237,8 +239,25 @@ h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--
 .rpe button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--text2);cursor:pointer}
 .rpe button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 .feel button{width:auto;padding:0 10px}
+/* erledigt */
+.check{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--ok);color:#06110c;font-size:13px;font-weight:700;flex:none}
+.wcard.done{border-color:rgba(25,158,112,.55);background:linear-gradient(180deg,rgba(25,158,112,.12),var(--bg2))}
+.item.done .t{color:var(--text2)}
+.item .m{padding-left:15px}
+.item.done .m{padding-left:30px}
+#dlgBody>.row:first-child{position:sticky;top:-24px;z-index:3;background:var(--card);margin:-24px -24px 0;padding:18px 24px 10px;border-bottom:1px solid var(--line)}
+.kpis .kpi .v{overflow-wrap:anywhere}
 dialog.full{max-width:760px;width:100vw;max-height:100dvh;border-radius:18px}
-@media (max-width:640px){dialog.full{border-radius:0;height:100dvh;margin:0;max-width:100vw}.wrap{padding:12px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){
+  dialog.full{border-radius:0;height:100dvh;max-height:100dvh;margin:0;max-width:100vw;padding:16px 14px calc(24px + env(safe-area-inset-bottom))}
+  #dlgBody>.row:first-child{top:-16px;margin:-16px -14px 0;padding:calc(12px + env(safe-area-inset-top)) 14px 10px}
+  .wrap{padding:12px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  #dlg .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #dlg .kpi{padding:8px 10px!important}#dlg .kpi .v{font-size:15px!important}#dlg .kpi .l{font-size:11px}
+  .srow{grid-template-columns:72px 1fr}
+  .card{padding:14px}
+}
 </style>
 </head>
 <body>
@@ -438,7 +457,8 @@ async function sportSettings(id, force) {
 async function events(id, from, to) { const r = await iv('GET', `athlete/${id}/events?oldest=${from}&newest=${to}`); (r || []).forEach(e => S.evIndex[e.id] = e); return r; }
 async function activities(id, from, to) {
   const k = `${id}|${from}|${to}`; if (S.actCache[k]) return S.actCache[k];
-  const r = await iv('GET', `athlete/${id}/activities?oldest=${from}&newest=${to}`); (r || []).forEach(a => S.actIndex[a.id] = a);
+  const r = ((await iv('GET', `athlete/${id}/activities?oldest=${from}&newest=${to}`)) || []).filter(a => !((a.moving_time || 0) < 120 || (sportOf(a.type) === 'Run' && (a.distance || 0) < 300)));
+  r.forEach(a => S.actIndex[a.id] = a);
   return S.actCache[k] = r;
 }
 function hasWatts(a) { return a.device_watts || (a.stream_types || []).includes('watts'); }
@@ -521,7 +541,7 @@ function downsample(time, vals, n = 400, smooth = 0) {
 function chart(el, series, o = {}) {
   const all = series.flatMap(s => s.pts.filter(p => p.y != null));
   if (!all.length) { el.innerHTML = `<div class="muted small" style="padding:30px 0;text-align:center">${o.empty || 'Keine Daten im Zeitraum.'}</div>`; return; }
-  const Wd = o.w || 560, H = o.h || 220, L = 40, R = 12, T = 10, B = 26;
+  const cw = Math.round(el.clientWidth || 0), Wd = cw > 200 ? cw : (o.w || 560), H = o.h || (Wd < 500 ? 190 : 220), L = 40, R = 12, T = 10, B = 26;
   const xs = all.map(p => +p.x), x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
   let y0 = Math.min(...all.map(p => p.y)), y1 = Math.max(...all.map(p => p.y)); if (o.dots || y0 > 0 && y0 / y1 < 0.5) y0 = Math.min(0, y0);
   const pad = (y1 - y0) * 0.08 || 1; y1 += pad; if (y0 !== 0) y0 -= pad;
@@ -650,7 +670,7 @@ const metaOf = (e, set) => { const w = wOf(e), t = w.blocks.length ? totals(w, s
   return [e.moving_time ? fmtH(e.moving_time) : t?.sec ? fmtH(t.sec) : '', e.distance ? km(e.distance) + ' km' : t?.m ? '≈ ' + km(t.m) + ' km' : '', e.icu_training_load ? 'TSS ' + e.icu_training_load : ''].filter(Boolean).join(' · '); };
 const wOf = e => Object.assign({ sport: sportOf(e.type), name: e.name }, parseWorkout(sportOf(e.type), e.description));
 function profileBar(w, set, h = 40) {
-  const fl = flatten(w, set); if (!fl.length) return '';
+  const fl = flatten(w, set); if (fl.length < 2) return '';
   const max = Math.max(1.2, ...fl.map(x => x.f)), c = SPORTS[w.sport].color;
   return `<div class="profile" style="height:${h}px">${fl.map(x => `<div style="flex:${Math.max(x.sec, 1)};height:${Math.max(6, x.f / max * 100)}%;background:${c};opacity:${0.35 + 0.65 * Math.min(1, x.f / max)}"></div>`).join('')}</div>`;
 }
@@ -672,8 +692,10 @@ async function renderPlan() {
   h += `<h2 class="sec">Heute · ${WD[today.getDay()]} ${dShort(today)}</h2>`;
   if (!todayEv.length && !todayAct.length) h += `<div class="wcard" style="cursor:default"><div class="nm">😌 Ruhetag</div><div class="meta">Erholung gehört zum Training.</div></div>`;
   for (const e of todayEv) { const w = wOf(e), a = match[e.id];
-    h += `<div class="wcard click" data-ev="${e.id}"><div class="nm"><span class="dot" style="background:${SPORTS[w.sport].color}"></span>${esc(e.name)}${a ? compPill(compliance(e, a)) : ''}</div>
-      <div class="meta">${metaOf(e, set)}</div>${profileBar(w, set, 46)}<div class="small" style="color:var(--accent)">Details ansehen ›</div></div>`; }
+    h += a ? `<div class="wcard done click" data-act="${esc(a.id)}"><div class="nm"><span class="check">✓</span>${esc(e.name)}</div>
+        <div class="meta">Erledigt: ${actMeta(a)}</div><div class="row" style="gap:6px;margin-top:8px">${compPill(compliance(e, a))}${feedbackPills(a) || '<span class="pill" style="color:var(--accent)">Wie war\'s? Feedback geben ›</span>'}</div></div>`
+      : `<div class="wcard click" data-ev="${e.id}"><div class="nm"><span class="dot" style="background:${SPORTS[w.sport].color}"></span>${esc(e.name)}</div>
+        <div class="meta">${metaOf(e, set)}</div>${profileBar(w, set, 46)}<div class="small" style="color:var(--accent);margin-top:6px">Details ansehen ›</div></div>`; }
   for (const a of todayAct) h += `<div class="wcard click" data-act="${esc(a.id)}"><div class="nm">✓ ${esc(a.name || a.type)}</div><div class="meta">${actMeta(a)}</div></div>`;
   // kommende Tage bis zum letzten sichtbaren Eintrag, mindestens bis Sonntag
   const lastEv = evs.reduce((m, e) => e.start_date_local.slice(0, 10) > m ? e.start_date_local.slice(0, 10) : m, ymd(addDays(mon, 6)));
@@ -687,8 +709,9 @@ async function renderPlan() {
     for (const e of de) {
       if (isRace(e)) { h += `<div class="item click" data-ev="${e.id}"><span class="prio">${raceInfo(e).prio}</span><span class="t">🏁 ${esc(e.name)}</span><span class="m">${e.distance ? km(e.distance) + ' km' : ''}</span></div>`; continue; }
       const a = match[e.id], past = k < t;
-      h += `<div class="item click" data-ev="${e.id}"><span class="dot" style="background:${SPORTS[sportOf(e.type)].color}"></span><span class="t">${esc(e.name)}</span>
-        ${a ? compPill(compliance(e, a)) : past && e.category === 'WORKOUT' ? '<span class="pill" style="color:var(--warn)">verpasst</span>' : ''}<span class="m">${metaOf(e, set)}</span></div>`;
+      h += a ? `<div class="item done click" data-act="${esc(a.id)}"><span class="check">✓</span><span class="t">${esc(e.name)}</span>${compPill(compliance(e, a))}<span class="m">Erledigt: ${actMeta(a)}</span></div>`
+        : `<div class="item click" data-ev="${e.id}"><span class="dot" style="background:${SPORTS[sportOf(e.type)].color}"></span><span class="t">${esc(e.name)}</span>
+        ${past && e.category === 'WORKOUT' ? '<span class="pill" style="color:var(--warn)">verpasst</span>' : ''}<span class="m">${metaOf(e, set)}</span></div>`;
     }
     for (const a of da) h += `<div class="item click" data-act="${esc(a.id)}"><span class="t">✓ ${esc(a.name || a.type)}</span><span class="m">${actMeta(a)}</span></div>`;
     h += '</div></div>';
@@ -799,7 +822,7 @@ async function renderHist() {
     const w = ymd(monday(parseYmd(a.start_date_local))); if (w !== lastWk) { lastWk = w; h += `<h2 class="sec">Woche ab ${dShort(parseYmd(w))}</h2>`; }
     const pe = planOf[a.id], d = parseYmd(a.start_date_local);
     h += `<div class="dayrow"><div class="dd"><b>${d.getDate()}.</b>${WD[d.getDay()]}</div><div class="item click" data-act="${esc(a.id)}" style="padding:0 4px">
-      <span class="dot" style="background:${SPORTS[sportOf(a.type)].color}"></span><span class="t">${esc(a.name || a.type)}</span>${pe ? compPill(compliance(pe, a)) : ''}${feedbackPills(a) || '<span class="pill" style="color:var(--accent)">Feedback geben</span>'}
+      <span class="dot" style="background:${SPORTS[sportOf(a.type)].color}"></span><span class="t">${esc(a.name || a.type)}</span>${pe ? compPill(compliance(pe, a)) : ''}${feedbackPills(a) || (parseYmd(a.start_date_local) >= addDays(today, -6) ? '<span class="pill" style="color:var(--accent)">Feedback geben</span>' : '')}
       <span class="m">${actMeta(a)}</span></div></div>`;
   }
   if (!list.length) h += '<div class="empty">Keine Einheiten im Zeitraum.</div>';
