@@ -1,0 +1,26 @@
+name: Wochenfreigabe
+
+# Jeden Sonntag: Athleten sehen geplante Workouts nur fuer die naechsten 2 Wochen.
+on:
+  schedule:
+    - cron: "17 5 * * 0"   # Sonntag 05:17 UTC (06:17 Winterzeit, 07:17 Sommerzeit)
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sichtbarkeit abgleichen
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+        run: python3 scripts/release.py
+      # GitHub pausiert Zeitplaene nach 60 Tagen ohne Repo-Aktivitaet; das haelt den Workflow aktiv.
+      - name: Zeitplan aktiv halten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/wochenfreigabe.yml/enable"
