@@ -132,7 +132,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .day:hover .addr{opacity:1}
 .ev.plan.done{opacity:.45}
 a.btn{text-decoration:none;color:inherit}
-.click{cursor:pointer}
+.click{cursor:pointer;-webkit-tap-highlight-color:rgba(200,245,96,.15)}
 .ev.click:hover{border-color:var(--text2)}
 tr.click:hover td{background:rgba(200,245,96,.05)}
 dialog.wide{max-width:980px;max-height:92vh}
@@ -716,6 +716,11 @@ async function renderPlan() {
     for (const a of da) h += `<div class="item click" data-act="${esc(a.id)}"><span class="t">✓ ${esc(a.name || a.type)}</span><span class="m">${actMeta(a)}</span></div>`;
     h += '</div></div>';
   }
+  // Alle kommenden Wettkämpfe
+  const allRaces = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
+  if (allRaces.length) h += `<h2 class="sec">Kommende Wettkämpfe</h2>${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
+    return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:var(--accent)">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px"><span class="prio">${ri.prio}</span><span class="t">🏁 ${esc(r.name)}</span>
+      <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
   h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt sonntags jeweils die übernächste Woche frei.</div>`;
   $('#view').innerHTML = h;
 }
@@ -800,12 +805,15 @@ async function openAct(a) {
     ch.forEach((c, i) => chart($('#ac' + i), [{ name: c[0], color: c[1], pts: c[2] }], { xnum: true, yfmt: c[3], h: 150, w: 700 }));
   } catch (e) { $('#actCharts').innerHTML = ''; }
 }
-document.addEventListener('click', ev => {
+// iOS Safari meldet Klicks auf <div> nur zuverlässig an Container unterhalb von body
+const onItemTap = ev => {
   if (ev.target.closest('button,a,textarea,input')) return;
   const t = ev.target.closest('[data-act],[data-ev]'); if (!t) return;
   if (t.dataset.act && S.actIndex[t.dataset.act]) openAct(S.actIndex[t.dataset.act]);
   if (t.dataset.ev && S.evIndex[t.dataset.ev]) openWorkout(S.evIndex[t.dataset.ev]);
-});
+};
+$('#view').addEventListener('click', onItemTap);
+$('#dlg').addEventListener('click', onItemTap);
 
 // ---------- Verlauf ----------
 async function renderHist() {
