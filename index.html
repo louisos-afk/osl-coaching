@@ -574,7 +574,7 @@ $('#btnKey').onclick = () => setTab('set');
 $('#btnTeam').onclick = () => setTab('team');
 $('#btnAddAth').onclick = () => {
   const coach = S.me?.name || 'deinem Namen';
-  const msg = `Hi! Ich coache dich ab jetzt über OSL-Coaching (intervals.icu). So verbindest du dich:\n1. Auf https://intervals.icu kostenlos registrieren.\n2. Einstellungen → Verbindungen → Garmin Connect verbinden und „Geplante Trainingseinheiten hochladen“ aktivieren.\n3. Auf https://intervals.icu/athletes „Add a coach“ wählen und nach „${coach}“ suchen.\nIch nehme die Anfrage dann an.`;
+  const msg = `Hi! Ich coache dich ab jetzt über OSL-Coaching (intervals.icu). So verbindest du dich:\n1. Auf https://intervals.icu kostenlos registrieren.\n2. Einstellungen → Verbindungen → Garmin Connect verbinden (nur „Aktivitäten herunterladen“ und „Wellnessdaten herunterladen“ anhaken).\n3. Auf https://intervals.icu/athletes „Add a coach“ wählen und nach „${coach}“ suchen.\n4. Deinen Plan siehst du in der Trainings-App: ${location.origin}${location.pathname.replace(/[^/]*$/, '')}athlete.html (auf dem Handy über Teilen → „Zum Home-Bildschirm“). Zum Anmelden brauchst du deinen API-Key aus intervals.icu: Einstellungen → Entwicklereinstellungen.\nIch nehme die Anfrage dann an.`;
   openDialog(`<h2>Athlet hinzufügen</h2>
     <p class="t2">intervals.icu verknüpft Coach und Athlet über eine Coaching-Anfrage. Danach taucht der Athlet hier automatisch auf.</p>
     <ol class="steps"><li><b>Athlet</b> legt einen intervals.icu-Account an und verbindet seine Uhr (Garmin, Coros, Polar, Suunto, Wahoo).</li>

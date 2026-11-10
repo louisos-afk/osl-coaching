@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OSL Training">
+<link rel="manifest" href="athlete.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>OSL-Coaching · Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/*SHARED_STYLE*/
+/* ---- Athleten-App ---- */
+body{display:block;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 24px}
+.topbar{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 4px;max-width:760px;margin:0 auto}
+.topbar .brand{padding:0;font-size:15px}
+.topbar .who{margin-left:auto;color:var(--text2);font-size:13px}
+.bottomnav{position:fixed;left:0;right:0;bottom:0;background:rgba(16,19,24,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:center;gap:4px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));z-index:10}
+.bottomnav button{flex:1;max-width:180px;border:0;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:6px;border-radius:10px;cursor:pointer}
+.bottomnav button span{font-size:20px;line-height:1}
+.bottomnav button.on{color:var(--accent);background:var(--accent-soft)}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:22px 4px 8px;font-weight:600}
+.race-banner{display:flex;align-items:center;gap:12px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:14px;padding:12px 14px;margin-bottom:14px}
+.race-banner .big{font-size:26px;font-weight:700;color:var(--accent);line-height:1}
+.wcard{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:16px;cursor:pointer;margin-bottom:10px}
+.wcard:hover{border-color:var(--line2)}
+.wcard .nm{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
+.wcard .meta{color:var(--text2);margin-top:4px}
+.dayrow{display:grid;grid-template-columns:54px 1fr;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line);align-items:start}
+.dayrow .dd{color:var(--muted);font-size:12px;line-height:1.3}
+.dayrow .dd b{display:block;color:var(--text2);font-size:16px}
+.dayrow.today .dd b{color:var(--accent)}
+.item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;cursor:pointer;flex-wrap:wrap}
+.item:hover{background:var(--card)}
+.item .t{font-weight:600}
+.item .m{color:var(--text2);font-size:12px;width:100%;padding-left:15px}
+.rest{color:var(--muted);font-size:13px;padding:6px 8px}
+.steps{display:flex;flex-direction:column;gap:8px}
+.sblock{border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.sblock .sh{padding:8px 12px;background:var(--card2);font-weight:600;display:flex;justify-content:space-between}
+.srow{display:grid;grid-template-columns:90px 1fr;gap:10px;padding:10px 12px;border-top:1px solid var(--line);align-items:center}
+.srow:first-of-type{border-top:0}
+.srow .du{font-weight:600;font-variant-numeric:tabular-nums}
+.srow .tg{font-variant-numeric:tabular-nums}
+.srow .zn{font-size:12px;color:var(--muted)}
+.rpe{display:flex;gap:4px;flex-wrap:wrap}
+.rpe button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--text2);cursor:pointer}
+.rpe button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.feel button{width:auto;padding:0 10px}
+dialog.full{max-width:760px;width:100vw;max-height:100dvh;border-radius:18px}
+@media (max-width:640px){dialog.full{border-radius:0;height:100dvh;margin:0;max-width:100vw}.wrap{padding:12px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="brand"><i>◆</i>OSL-Coaching</div><div class="who" id="who"></div></div>
+<main class="wrap" id="view"></main>
+<span class="status" id="status" style="position:fixed;top:8px;right:12px;z-index:20"></span>
+<nav class="bottomnav" id="nav">
+  <button data-v="plan"><span>📅</span>Plan</button>
+  <button data-v="hist"><span>📈</span>Verlauf</button>
+  <button data-v="prof"><span>👤</span>Profil</button>
+</nav>
+<dialog id="dlg" class="full"><div id="dlgBody"></div></dialog>
+
+<script>
+'use strict';
+/*SHARED_JS*/
+
+// =============== Athleten-App ===============
+const S = { me: null, settings: {}, actCache: {}, actIndex: {}, evIndex: {}, pm: {}, view: LS.get('view', 'plan'), histDays: 30 };
+const cur = () => S.me;
+const visible = e => !e.hide_from_athlete;
+const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+$('#dlg').addEventListener('close', () => { $('#dlgBody').innerHTML = ''; });
+
+async function init() {
+  if (!LS.get('key', '')) return login();
+  status('<span class="spin"></span>');
+  try { S.me = await iv('GET', 'athlete/0'); }
+  catch (e) { status(''); return login(e.message); }
+  status(''); $('#who').textContent = S.me.name || '';
+  nav(S.view);
+}
+function login(err) {
+  $('#nav').style.display = 'none';
+  $('#view').innerHTML = `<div class="card stack" style="margin-top:40px">
+    <h1 style="margin:0;font-size:22px">Willkommen bei OSL-Coaching</h1>
+    <div class="t2">Hier siehst du deinen Trainingsplan, die Details jedes Workouts und deine Auswertungen.</div>
+    <div class="t2">Zum Verbinden brauchst du deinen <b>API-Key</b> aus intervals.icu: Einstellungen → ganz unten „Entwicklereinstellungen“ → API-Schlüssel. Er bleibt nur auf diesem Gerät.</div>
+    ${err ? `<div class="err small">${esc(err)}</div>` : ''}
+    <input id="kIn" type="password" placeholder="API-Key" autocomplete="off">
+    <button class="btn pri" id="kOk" style="justify-content:center">Verbinden</button></div>`;
+  $('#kOk').onclick = () => { const k = $('#kIn').value.trim(); if (!k) return; LS.set('key', k); $('#nav').style.display = ''; init(); };
+}
+$$('#nav button').forEach(b => b.onclick = () => nav(b.dataset.v));
+function nav(v) { S.view = v; LS.set('view', v); $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); window.scrollTo(0, 0);
+  ({ plan: renderPlan, hist: renderHist, prof: renderProf }[v] || renderPlan)(); }
+const loading = () => { $('#view').innerHTML = '<div class="empty"><span class="spin"></span></div>'; };
+const metaOf = (e, set) => { const w = wOf(e), t = w.blocks.length ? totals(w, set) : null;
+  return [e.moving_time ? fmtH(e.moving_time) : t?.sec ? fmtH(t.sec) : '', e.distance ? km(e.distance) + ' km' : t?.m ? '≈ ' + km(t.m) + ' km' : '', e.icu_training_load ? 'TSS ' + e.icu_training_load : ''].filter(Boolean).join(' · '); };
+const wOf = e => Object.assign({ sport: sportOf(e.type), name: e.name }, parseWorkout(sportOf(e.type), e.description));
+function profileBar(w, set, h = 40) {
+  const fl = flatten(w, set); if (!fl.length) return '';
+  const max = Math.max(1.2, ...fl.map(x => x.f)), c = SPORTS[w.sport].color;
+  return `<div class="profile" style="height:${h}px">${fl.map(x => `<div style="flex:${Math.max(x.sec, 1)};height:${Math.max(6, x.f / max * 100)}%;background:${c};opacity:${0.35 + 0.65 * Math.min(1, x.f / max)}"></div>`).join('')}</div>`;
+}
+
+// ---------- Plan ----------
+async function renderPlan() {
+  loading();
+  const id = S.me.id, today = new Date(), t = ymd(today), mon = monday(today);
+  let evs, acts, set, races;
+  try {
+    [evs, acts, set, races] = await Promise.all([events(id, ymd(mon), ymd(addDays(today, 21))), activities(id, ymd(mon), t), sportSettings(id), events(id, t, ymd(addDays(today, 365)))]);
+  } catch (e) { $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  evs = evs.filter(visible); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
+  const race = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local))[0];
+  const todayEv = evs.filter(e => e.start_date_local.slice(0, 10) === t && !isRace(e)), todayAct = acts.filter(a => a.start_date_local.slice(0, 10) === t && !doneIds.has(a.id));
+  let h = '';
+  if (race) { const r = raceInfo(race), d = Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5);
+    h += `<div class="race-banner click" data-ev="${race.id}"><div class="big">${d}</div><div><div class="small t2">${d === 1 ? 'Tag' : 'Tage'} bis</div><b>🏁 ${esc(race.name)}</b><div class="small t2">${dLong(parseYmd(race.start_date_local))}${r.goal ? ' · Ziel ' + fmtDur(r.goal) : ''}</div></div></div>`; }
+  h += `<h2 class="sec">Heute · ${WD[today.getDay()]} ${dShort(today)}</h2>`;
+  if (!todayEv.length && !todayAct.length) h += `<div class="wcard" style="cursor:default"><div class="nm">😌 Ruhetag</div><div class="meta">Erholung gehört zum Training.</div></div>`;
+  for (const e of todayEv) { const w = wOf(e), a = match[e.id];
+    h += `<div class="wcard click" data-ev="${e.id}"><div class="nm"><span class="dot" style="background:${SPORTS[w.sport].color}"></span>${esc(e.name)}${a ? compPill(compliance(e, a)) : ''}</div>
+      <div class="meta">${metaOf(e, set)}</div>${profileBar(w, set, 46)}<div class="small" style="color:var(--accent)">Details ansehen ›</div></div>`; }
+  for (const a of todayAct) h += `<div class="wcard click" data-act="${esc(a.id)}"><div class="nm">✓ ${esc(a.name || a.type)}</div><div class="meta">${actMeta(a)}</div></div>`;
+  // kommende Tage bis zum letzten sichtbaren Eintrag, mindestens bis Sonntag
+  const lastEv = evs.reduce((m, e) => e.start_date_local.slice(0, 10) > m ? e.start_date_local.slice(0, 10) : m, ymd(addDays(mon, 6)));
+  let wk = null;
+  for (let d = addDays(mon, 0); ymd(d) <= lastEv; d = addDays(d, 1)) {
+    const k = ymd(d); if (k === t) continue;
+    const wkStart = ymd(monday(d)); if (wkStart !== wk) { wk = wkStart; h += `<h2 class="sec">${wkStart === ymd(mon) ? 'Diese Woche' : wkStart === ymd(addDays(mon, 7)) ? 'Nächste Woche' : 'Woche ab ' + dShort(parseYmd(wkStart))}</h2>`; }
+    const de = evs.filter(e => e.start_date_local.slice(0, 10) === k), da = acts.filter(a => a.start_date_local.slice(0, 10) === k && !doneIds.has(a.id));
+    h += `<div class="dayrow"><div class="dd"><b>${d.getDate()}.</b>${WD[d.getDay()]}</div><div>`;
+    if (!de.length && !da.length) h += `<div class="rest">Ruhetag</div>`;
+    for (const e of de) {
+      if (isRace(e)) { h += `<div class="item click" data-ev="${e.id}"><span class="prio">${raceInfo(e).prio}</span><span class="t">🏁 ${esc(e.name)}</span><span class="m">${e.distance ? km(e.distance) + ' km' : ''}</span></div>`; continue; }
+      const a = match[e.id], past = k < t;
+      h += `<div class="item click" data-ev="${e.id}"><span class="dot" style="background:${SPORTS[sportOf(e.type)].color}"></span><span class="t">${esc(e.name)}</span>
+        ${a ? compPill(compliance(e, a)) : past && e.category === 'WORKOUT' ? '<span class="pill" style="color:var(--warn)">verpasst</span>' : ''}<span class="m">${metaOf(e, set)}</span></div>`;
+    }
+    for (const a of da) h += `<div class="item click" data-act="${esc(a.id)}"><span class="t">✓ ${esc(a.name || a.type)}</span><span class="m">${actMeta(a)}</span></div>`;
+    h += '</div></div>';
+  }
+  h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt sonntags jeweils die übernächste Woche frei.</div>`;
+  $('#view').innerHTML = h;
+}
+const actMeta = a => [a.distance ? km(a.distance) + ' km' : '', a.moving_time ? fmtH(a.moving_time) : '', sportOf(a.type) === 'Run' && a.distance && a.moving_time ? fmtPace(a.distance / a.moving_time) + '/km' : '', a.average_heartrate ? Math.round(a.average_heartrate) + ' bpm' : ''].filter(Boolean).join(' · ');
+
+// ---------- Workout-Details ----------
+function zoneName(sport, st, set) {
+  const cfg = set?.[sport === 'Swim' ? 'Swim' : 'Run'], z = cfg?.pace_zones, names = cfg?.pace_zone_names; if (!z || sport === 'Ride') return '';
+  const m = st.mode || 'pct'; if (m === 'zone') return '';
+  if (m === 'hrz' || m === 'lthr') return 'nach Herzfrequenz';
+  const f = factor(sport, st, set) * 100; let i = z.findIndex(u => f <= u); if (i < 0) i = z.length - 1;
+  return names?.[i] || 'Z' + (i + 1);
+}
+function durTxt(st) { return st.unit === 'm' ? `${st.dur} min` : st.unit === 's' ? `${st.dur} s` : st.unit === 'km' ? `${String(st.dur).replace('.', ',')} km` : `${st.dur} m`; }
+async function openWorkout(e) {
+  const set = await sportSettings(S.me.id).catch(() => null), w = wOf(e), sp = SPORTS[w.sport];
+  if (isRace(e)) { const r = raceInfo(e);
+    openDialog(`<div class="row" style="justify-content:space-between"><h2 style="margin:0">🏁 ${esc(e.name)}</h2><button class="btn sm" onclick="closeDialog()">Schließen</button></div>
+      <div class="small muted" style="margin:4px 0 14px">${dLong(parseYmd(e.start_date_local))} · Priorität ${r.prio}</div>
+      <div class="kpis">${[['Distanz', e.distance ? km(e.distance) + ' km' : '–'], ['Zielzeit', r.goal ? fmtDur(r.goal) : '–'], ['Zielpace', r.goal && e.distance ? fmtPace(e.distance / r.goal) + '/km' : '–']].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v" style="font-size:20px">${v}</div></div>`).join('')}</div>
+      ${r.notes ? `<div class="card" style="white-space:pre-wrap">${esc(r.notes)}</div>` : ''}`); return; }
+  const t = totals(w, set), p = w.blocks.length ? predictTSS(w, set, w.sport === 'Run' ? await powerModel(S.me.id).catch(() => null) : null) : null;
+  const kp = [['Dauer', e.moving_time ? fmtH(e.moving_time) : t.sec ? fmtH(t.sec) : '–'], ['Distanz', e.distance ? km(e.distance) + ' km' : t.m ? '≈ ' + km(t.m) + ' km' : '–'],
+    ['Belastung', e.icu_training_load ? 'TSS ' + e.icu_training_load : p?.pace ? 'TSS ' + Math.round(p.pace) : '–'], ['Ø Puls', p?.avgHr ? '≈ ' + Math.round(p.avgHr) : '–']];
+  let steps = '';
+  if (sp.strength) steps = `<div class="sblock">${(w.ex || []).map(x => `<div class="srow"><div class="du">${x.sets}×${x.reps}</div><div><div class="tg">${esc(x.name)}</div><div class="zn">${esc(x.load || '')}</div></div></div>`).join('')}</div>`;
+  else if (w.blocks.length) steps = w.blocks.map(b => `<div class="sblock"><div class="sh"><span>${b.reps > 1 ? b.reps + '× ' : ''}${esc(b.label || (b.reps > 1 ? 'Wiederholungen' : 'Abschnitt'))}</span><span class="small t2">${fmtH(flatten({ sport: w.sport, blocks: [b] }, set).reduce((s, x) => s + x.sec, 0))}</span></div>
+      ${b.steps.map(st => `<div class="srow"><div class="du">${durTxt(st)}</div><div><div class="tg">${st.ramp ? '↗ ' : ''}${stepTargetText(w.sport, st, set) || esc(stepText(w.sport, st).slice(2))}</div><div class="zn">${esc([zoneName(w.sport, st, set), st.note].filter(Boolean).join(' · '))}</div></div></div>`).join('')}</div>`).join('');
+  openDialog(`<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0">${sp.icon} ${esc(e.name)}</h2><div class="small muted" style="margin-top:4px">${WD[parseYmd(e.start_date_local).getDay()]}, ${dLong(parseYmd(e.start_date_local))}</div></div><button class="btn sm" onclick="closeDialog()">Schließen</button></div>
+    <div class="kpis" style="margin:16px 0 10px">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px 12px"><div class="l">${l}</div><div class="v" style="font-size:19px">${v}</div></div>`).join('')}</div>
+    ${w.desc ? `<div class="card" style="white-space:pre-wrap;margin-bottom:12px">${esc(w.desc)}</div>` : ''}
+    ${profileBar(w, set, 64)}
+    <div class="steps" style="margin-top:8px">${steps || `<pre>${esc(e.description || 'Keine Details hinterlegt.')}</pre>`}</div>
+    <div class="small muted" style="margin-top:12px">Paces sind auf deine aktuelle Schwelle (${fmtPace(set?.Run?.threshold_pace)}/km) berechnet.</div>`);
+}
+
+// ---------- Einheit-Details mit Feedback ----------
+async function openAct(a) {
+  const id = S.me.id, set = await sportSettings(id).catch(() => ({})), m = metrics(a, set), sp = SPORTS[m.sport];
+  const evs = ((await events(id, a.start_date_local.slice(0, 10), a.start_date_local.slice(0, 10)).catch(() => [])) || []).filter(visible);
+  const peId = Object.keys(matchPlan(evs, [a]))[0], pe = evs.find(e => e.id === a.paired_event_id) || (peId ? S.evIndex[peId] : null);
+  const kp = [['Distanz', m.dist ? km(m.dist) + ' km' : '–'], ['Zeit', fmtDur(m.sec)], ['Pace', m.sport === 'Run' ? fmtPace(m.speed) + '/km' : '–'], ['Ø Puls', a.average_heartrate ? n0(a.average_heartrate) : '–'], ['Belastung', n0(a.icu_training_load)], ['Höhenmeter', a.total_elevation_gain ? n0(a.total_elevation_gain) + ' m' : '–']];
+  let rpe = a.icu_rpe || null, feel = a.feel || null;
+  openDialog(`<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0">${sp.icon} ${esc(a.name || a.type)}</h2><div class="small muted" style="margin-top:4px">${WD[parseYmd(a.start_date_local).getDay()]}, ${dLong(parseYmd(a.start_date_local))}, ${a.start_date_local.slice(11, 16)} Uhr</div></div><button class="btn sm" onclick="closeDialog()">Schließen</button></div>
+    <div class="kpis" style="margin:16px 0">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px 12px"><div class="l">${l}</div><div class="v" style="font-size:19px">${v}</div></div>`).join('')}</div>
+    <div class="card stack"><h3 style="margin:0">Wie war's?</h3>
+      <div class="small t2">Anstrengung (1 = sehr leicht, 10 = maximal)</div><div class="rpe" id="rpe">${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button data-v="${n}" class="${n === rpe ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="small t2">Gefühl</div><div class="rpe feel" id="feel">${Object.entries(FEEL).map(([k, v]) => `<button data-v="${k}" class="${+k === feel ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <textarea id="note" rows="2" placeholder="Notiz für deinen Coach (optional)">${esc(a.description || '')}</textarea>
+      <div class="row"><button class="btn pri" id="fbSave">Speichern</button><span class="small muted" id="fbRes"></span></div></div>
+    ${pe ? `<div class="card" style="margin-top:12px"><h3>Plan gegen Ist · ${esc(pe.name)} ${compPill(compliance(pe, a))}</h3><div class="tbl-wrap" id="pvi"><span class="spin"></span></div></div>` : ''}
+    <div class="stack" id="actCharts" style="margin-top:12px"><span class="spin"></span></div>
+    <div class="card" style="margin-top:12px"><h3>Nachrichten</h3><div id="actMsg"><span class="spin"></span></div></div>`);
+  $$('#rpe button').forEach(b => b.onclick = () => { rpe = +b.dataset.v; $$('#rpe button').forEach(x => x.classList.toggle('on', x === b)); });
+  $$('#feel button').forEach(b => b.onclick = () => { feel = +b.dataset.v; $$('#feel button').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#fbSave').onclick = async () => { const body = { description: $('#note').value.trim() }; if (rpe) body.icu_rpe = rpe; if (feel) body.feel = feel;
+    try { await iv('PUT', `activity/${a.id}`, body); Object.assign(a, body); $('#fbRes').textContent = 'Gespeichert ✓'; } catch (e) { $('#fbRes').innerHTML = `<span class="err">${esc(e.message)}</span>`; } };
+  loadMessages(a);
+  try {
+    const [st, ints] = await Promise.all([iv('GET', `activity/${a.id}/streams?types=time,heartrate,velocity_smooth`), pe ? iv('GET', `activity/${a.id}/intervals`).catch(() => null) : null]);
+    if (pe && $('#pvi')) { const pw = wOf(pe); $('#pvi').innerHTML = pw.blocks.length ? planVsActualHtml(pw, set, ints?.icu_intervals || [], pw.sport, { distance: a.distance, moving_time: a.moving_time, average_heartrate: a.average_heartrate, average_watts: m.avgW }) : '<div class="small muted">Kein strukturiertes Workout.</div>'; }
+    const g = k => (st || []).find(x => x.type === k)?.data, time = g('time'), ch = [];
+    if (g('velocity_smooth')) ch.push(['Pace', 'var(--s3)', downsample(time, g('velocity_smooth'), 300, 15).filter(p => p.y > 0.5), v => fmtPace(v)]);
+    if (g('heartrate')) ch.push(['Puls', 'var(--s2)', downsample(time, g('heartrate'), 300), n0]);
+    $('#actCharts').innerHTML = ch.map((c, i) => `<div class="card"><div class="small t2" style="margin-bottom:4px">${c[0]}</div><div id="ac${i}"></div></div>`).join('');
+    ch.forEach((c, i) => chart($('#ac' + i), [{ name: c[0], color: c[1], pts: c[2] }], { xnum: true, yfmt: c[3], h: 150, w: 700 }));
+  } catch (e) { $('#actCharts').innerHTML = ''; }
+}
+document.addEventListener('click', ev => {
+  if (ev.target.closest('button,a,textarea,input')) return;
+  const t = ev.target.closest('[data-act],[data-ev]'); if (!t) return;
+  if (t.dataset.act && S.actIndex[t.dataset.act]) openAct(S.actIndex[t.dataset.act]);
+  if (t.dataset.ev && S.evIndex[t.dataset.ev]) openWorkout(S.evIndex[t.dataset.ev]);
+});
+
+// ---------- Verlauf ----------
+async function renderHist() {
+  loading();
+  const id = S.me.id, today = new Date(), from = ymd(addDays(today, -S.histDays + 1)), to = ymd(today);
+  let acts, evs, set;
+  try { [acts, evs, set] = await Promise.all([activities(id, from, to), events(id, from, to), sportSettings(id)]); } catch (e) { $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  const match = matchPlan(evs, acts), planOf = {}; Object.entries(match).forEach(([eid, a]) => planOf[a.id] = S.evIndex[eid]);
+  const list = [...acts].sort((a, b) => b.start_date_local.localeCompare(a.start_date_local));
+  const wk = acts.filter(a => parseYmd(a.start_date_local) >= addDays(today, -6)), sum = k => wk.reduce((s, a) => s + (a[k] || 0), 0);
+  let h = `<div class="kpis" style="margin-top:6px">${[['7 Tage', km(sum('distance')) + ' km'], ['Zeit', fmtH(sum('moving_time'))], ['Belastung', 'TSS ' + n0(sum('icu_training_load'))]].map(([l, v]) => `<div class="kpi"><div class="l">${l}</div><div class="v" style="font-size:20px">${v}</div></div>`).join('')}</div>`;
+  let lastWk = null;
+  for (const a of list) {
+    const w = ymd(monday(parseYmd(a.start_date_local))); if (w !== lastWk) { lastWk = w; h += `<h2 class="sec">Woche ab ${dShort(parseYmd(w))}</h2>`; }
+    const pe = planOf[a.id], d = parseYmd(a.start_date_local);
+    h += `<div class="dayrow"><div class="dd"><b>${d.getDate()}.</b>${WD[d.getDay()]}</div><div class="item click" data-act="${esc(a.id)}" style="padding:0 4px">
+      <span class="dot" style="background:${SPORTS[sportOf(a.type)].color}"></span><span class="t">${esc(a.name || a.type)}</span>${pe ? compPill(compliance(pe, a)) : ''}${feedbackPills(a) || '<span class="pill" style="color:var(--accent)">Feedback geben</span>'}
+      <span class="m">${actMeta(a)}</span></div></div>`;
+  }
+  if (!list.length) h += '<div class="empty">Keine Einheiten im Zeitraum.</div>';
+  h += `<div style="text-align:center;margin-top:16px"><button class="btn" id="more">Ältere laden</button></div>`;
+  $('#view').innerHTML = h;
+  $('#more').onclick = () => { S.histDays += 30; renderHist(); };
+}
+
+// ---------- Profil ----------
+async function renderProf() {
+  loading();
+  const id = S.me.id, today = new Date();
+  let set, well, races;
+  try { [set, well, races] = await Promise.all([sportSettings(id, true), iv('GET', `athlete/${id}/wellness?oldest=${ymd(addDays(today, -3))}&newest=${ymd(today)}`), events(id, ymd(today), ymd(addDays(today, 365)))]); }
+  catch (e) { $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  const R = set.Run || {}, thr = R.threshold_pace, w = [...(well || [])].reverse().find(x => x.ctl != null) || {}, v = thr ? vo2(thr * 60) / 0.88 : null;
+  const zr = (z, i, f) => { const lo = i ? z[i - 1] : 0, up = z[i]; return up >= 999 ? `< ${f(lo)}` : lo ? `${f(up)}–${f(lo)}` : `> ${f(up)}`; };
+  let h = `<div class="kpis" style="margin-top:6px">
+    <div class="kpi"><div class="l">Fitness</div><div class="v">${n0(w.ctl)}</div><div class="d">Form ${formTxt(w.ctl - w.atl)}</div></div>
+    <div class="kpi"><div class="l">Schwellenpace</div><div class="v">${fmtPace(thr)}<small>/km</small></div><div class="d">${v ? 'VDOT ≈ ' + v.toFixed(1) : ''}</div></div>
+    <div class="kpi"><div class="l">Schwellenpuls</div><div class="v">${R.lthr || '–'}<small>bpm</small></div><div class="d">max ${R.max_hr || '–'}</div></div></div>`;
+  if (thr && R.pace_zones) h += `<h2 class="sec">Pace-Zonen</h2><div class="card"><table>${R.pace_zones.map((u, i) => `<tr><td>${esc(R.pace_zone_names?.[i] || 'Z' + (i + 1))}</td><td class="num">${zr(R.pace_zones, i, p => fmtPace(thr * p / 100))} /km</td></tr>`).join('')}</table></div>`;
+  if (R.hr_zones) h += `<h2 class="sec">Puls-Zonen</h2><div class="card"><table>${R.hr_zones.map((u, i) => `<tr><td>${esc(R.hr_zone_names?.[i] || 'Z' + (i + 1))}</td><td class="num">${i ? R.hr_zones[i - 1] + 1 : 0}–${u} bpm</td></tr>`).join('')}</table></div>`;
+  if (v) h += `<h2 class="sec">Prognosen aus deiner Schwelle</h2><div class="card"><table>${[[5000, '5 km'], [10000, '10 km'], [21097.5, 'Halbmarathon'], [42195, 'Marathon']].map(([d, n]) => { const t = predict(v, d); return `<tr><td>${n}</td><td class="num">${fmtDur(t)}</td><td class="num">${fmtPace(d / t)}/km</td></tr>`; }).join('')}</table></div>`;
+  const rs = (races || []).filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
+  if (rs.length) h += `<h2 class="sec">Wettkämpfe</h2>${rs.map(r => `<div class="item click" data-ev="${r.id}"><span class="prio">${raceInfo(r).prio}</span><span class="t">${esc(r.name)}</span><span class="m">${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${raceInfo(r).goal ? ' · Ziel ' + fmtDur(raceInfo(r).goal) : ''}</span></div>`).join('')}`;
+  h += `<div style="text-align:center;margin-top:24px"><button class="btn danger" id="logout">Abmelden</button></div>`;
+  $('#view').innerHTML = h;
+  $('#logout').onclick = () => { if (confirm('Von diesem Gerät abmelden?')) { LS.del('key'); location.reload(); } };
+}
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+init();
+</script>
+</body>
+</html>
