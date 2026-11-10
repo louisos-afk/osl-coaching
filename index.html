@@ -352,10 +352,10 @@ function flatten(w, set) {
   for (const b of w.blocks) for (let r = 0; r < (b.reps || 1); r++) for (const st of b.steps) {
     const f = factor(w.sport, st, set); let sec = null, m = 0;
     if (st.unit === 'm') sec = st.dur * 60; else if (st.unit === 's') sec = +st.dur;
-    if (w.sport === 'Ride') { out.push({ sec: sec || 0, m: 0, f }); continue; }
+    if (w.sport === 'Ride') { out.push({ sec: sec || 0, m: 0, f, st, v: null }); continue; }
     const v = (st.mode === 'abs') ? (perOf(w.sport) / st.pSlow + perOf(w.sport) / st.pFast) / 2 : thr ? thr * f : null;
     if (sec != null) m = v ? v * sec : 0; else { m = st.unit === 'km' ? st.dur * 1000 : +st.dur; sec = v ? m / v : 0; }
-    out.push({ sec, m, f });
+    out.push({ sec, m, f, st, v });
   }
   return out;
 }
@@ -363,6 +363,48 @@ function totals(w, set) {
   if (SPORTS[w.sport].strength) return { sec: (w.dur || 0) * 60, m: 0, tss: null };
   let sec = 0, m = 0, tss = 0; for (const x of flatten(w, set)) { sec += x.sec; m += x.m; tss += x.sec * x.f * x.f / 36; }
   return { sec, m, tss };
+}
+// ---- TSS-Prognose (Watt, HR, Pace) ----
+// Watt: Leistung je Schritt aus Geschwindigkeit (Lauf: kalibriert aus eigenen Laeufen W pro m/s), IF = P / CP.
+// HR: erwartete HF je Schritt (aus HF-Ziel oder aus Intensitaet), HRSS nach TRIMP, normiert auf 1 h an LTHR = 100.
+// Pace: IF = Geschwindigkeit / Schwellenpace.
+const hrFracOf = f => f >= 1 ? 1 + (f - 1) * 0.5 : 1 - (1 - f) * 0.67;
+async function powerModel(aid) {
+  S.pm = S.pm || {}; if (S.pm[aid] !== undefined) return S.pm[aid];
+  try {
+    const acts = await activities(aid, ymd(addDays(new Date(), -60)), ymd(new Date())); await ensurePower(acts);
+    const r = acts.filter(a => sportOf(a.type) === 'Run' && a.distance && a.moving_time > 600).map(a => { const p = cachedPower(a); return p?.avg ? p.avg / (a.distance / a.moving_time) : null; }).filter(x => x && x > 20 && x < 150).sort((x, y) => x - y);
+    return S.pm[aid] = r.length ? { k: r[Math.floor(r.length / 2)], n: r.length } : null;
+  } catch { return S.pm[aid] = null; }
+}
+function predictTSS(w, set, pm) {
+  if (!set || SPORTS[w.sport].strength) return null;
+  const sport = w.sport, cfg = set[sport] || {}, thr = thrFor(set, sport), fl = flatten(w, set);
+  const cp = sport === 'Ride' ? cfg.ftp : set.Run?.ftp, lthr = cfg.lthr || set.Run?.lthr, max = cfg.max_hr || set.Run?.max_hr, rest = set.rest || 50;
+  const hrz = cfg.hr_zones || set.Run?.hr_zones;
+  const trimp = hr => { const r = Math.max(0, (hr - rest) / (max - rest)); return r * Math.exp(1.92 * r); };
+  let pace = 0, watt = 0, hr = 0, hrSum = 0, sec = 0;
+  for (const x of fl) {
+    if (!x.sec) continue; sec += x.sec;
+    if (sport !== 'Ride' && thr) { const f = x.v ? x.v / thr : x.f; pace += x.sec * f * f / 36; }
+    if (cp) { const P = sport === 'Ride' ? cp * x.f : pm?.k && x.v ? pm.k * x.v : x.v && thr ? cp * x.v / thr : cp * x.f; watt += x.sec * (P / cp) ** 2 / 36; }
+    if (lthr) {
+      const st = x.st, m = st.mode || 'pct'; let H;
+      if (m === 'hrz' && hrz) { const lo = st.z1 > 1 ? hrz[st.z1 - 2] : hrz[0] * 0.85, hi = hrz[(st.z2 || st.z1) - 1]; H = (lo + hi) / 2; }
+      else if (m === 'lthr') H = lthr * (st.lo + st.hi) / 200;
+      else H = lthr * hrFracOf(x.v && thr ? x.v / thr : x.f);
+      if (max) H = Math.min(H, max);
+      hrSum += H * x.sec;
+      if (max && max > lthr) hr += x.sec * trimp(H) / (3600 * trimp(lthr)) * 100;
+    }
+  }
+  return { pace: thr && sport !== 'Ride' ? pace : null, watt: cp ? watt : null, hr: lthr && max ? hr : null, avgHr: lthr && sec ? hrSum / sec : null, calibrated: !!pm?.k };
+}
+function tssLine(p) {
+  if (!p) return '';
+  const pill = (c, l, v) => `<span class="pill"><span class="dot" style="background:${c}"></span>${l} ${v == null ? '–' : Math.round(v)}</span>`;
+  return `<div class="row" style="gap:6px;margin:6px 0"><span class="small t2">Prognose TSS</span>${pill('var(--s1)', 'Watt', p.watt)}${pill('var(--s2)', 'HR', p.hr)}${pill('var(--s3)', 'Pace', p.pace)}${p.avgHr ? `<span class="small muted">Ø HF ≈ ${Math.round(p.avgHr)} bpm</span>` : ''}</div>
+    ${p.watt == null ? '<div class="small muted">Watt-TSS: CP/FTP unter „Schwellen“ eintragen.</div>' : ''}${p.hr == null ? '<div class="small muted">HR-TSS: LTHR und HFmax unter „Schwellen“ eintragen.</div>' : ''}`;
 }
 function stepTargetText(sport, st, set) {
   const m = st.mode || 'pct', thr = thrFor(set, sport), per = perOf(sport), unit = sport === 'Swim' ? '/100m' : '/km', cfg = set && set[sport === 'Swim' ? 'Swim' : sport === 'Ride' ? 'Ride' : 'Run'];
@@ -450,7 +492,7 @@ function saveWorkout(w) {
 }
 async function sportSettings(id, force) {
   if (S.settings[id] && !force) return S.settings[id];
-  const list = await iv('GET', `athlete/${id}/sport-settings`); const o = {};
+  const [list, prof] = await Promise.all([iv('GET', `athlete/${id}/sport-settings`), iv('GET', `athlete/${id}`).catch(() => null)]); const o = { rest: prof?.icu_resting_hr || null };
   for (const s of list || []) for (const t of ['Run', 'Ride', 'Swim']) if ((s.types || []).includes(t) && !o[t]) o[t] = s;
   return S.settings[id] = o;
 }
@@ -664,7 +706,7 @@ async function planDialog(date, wid) {
     const fill = () => { const list = S.lib.filter(w => w.sport === sport); $('#plW').innerHTML = list.map(w => `<option value="${esc(w.id)}" ${w.id === wid ? 'selected' : ''}>${esc(w.name)}</option>`).join(''); if (!$('#plW').value && list[0]) $('#plW').value = list[0].id; prev(); };
     const prev = async () => { const w = S.lib.find(x => x.id === $('#plW').value); if (!w) { $('#plPrev').innerHTML = '<div class="muted">Keine Workouts in dieser Sportart.</div>'; return; }
       const set = await sportSettings($('#plAth').value).catch(() => null); const t = totals(w, set);
-      $('#plPrev').innerHTML = `<pre>${esc(workoutText(w))}</pre><div class="small t2" style="margin-top:6px">${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}${t.tss ? ' · TSS ≈ ' + Math.round(t.tss) : ''}</div>`; };
+      $('#plPrev').innerHTML = `<pre>${esc(workoutText(w))}</pre><div class="small t2" style="margin-top:6px">${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}</div>${tssLine(predictTSS(w, set, w.sport === 'Run' ? await powerModel($('#plAth').value) : null))}`; };
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
     $('#plW').onchange = prev; $('#plAth').onchange = prev; fill();
     $('#plOk').onclick = async () => { const w = S.lib.find(x => x.id === $('#plW').value), aid = $('#plAth').value, d = $('#plDate').value; if (!w || !d) return;
@@ -790,7 +832,8 @@ function mountEditor(box, w, o = {}) {
     let h = `<pre>${esc(workoutText(w))}</pre>`;
     if (!sp.strength) { const fl = flatten(w, set), t = totals(w, set), max = Math.max(1.2, ...fl.map(x => x.f));
       h = `<div class="profile">${fl.map(x => `<div style="flex:${Math.max(x.sec, 1)};height:${Math.max(6, x.f / max * 100)}%;background:${sp.color};opacity:${0.35 + 0.65 * Math.min(1, x.f / max)}"></div>`).join('')}</div>
-        <div class="small t2" style="margin-bottom:8px">${a && thr ? `Für ${esc(a.name)}: ` : ''}${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}${t.tss ? ' · TSS ≈ ' + Math.round(t.tss) : ''}${!thr && w.sport !== 'Ride' ? ' · Schwelle fehlt' : ''}</div>` + h; }
+        <div class="small t2">${a && thr ? `Für ${esc(a.name)}: ` : ''}${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}${!thr && w.sport !== 'Ride' ? ' · Schwelle fehlt' : ''}</div>
+        ${tssLine(predictTSS(w, set, w.sport === 'Run' && aid ? await powerModel(aid) : null))}<div style="height:6px"></div>` + h; }
     const p = K('prev'); if (p) p.innerHTML = h;
   }
 }
