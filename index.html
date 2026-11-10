@@ -400,6 +400,13 @@ function predictTSS(w, set, pm) {
   }
   return { pace: thr && sport !== 'Ride' ? pace : null, watt: cp ? watt : null, hr: lthr && max ? hr : null, avgHr: lthr && sec ? hrSum / sec : null, calibrated: !!pm?.k };
 }
+// Prognose-Pills fuer geplante Workouts im Kalender (intervals.icu-Wert = Pace bzw. gewaehlte Prioritaet)
+function planPills(e, sp, set, pm) {
+  if (e.category !== 'WORKOUT' || SPORTS[sp].strength) return e.icu_training_load ? `<div class="tss"><span class="pill">TSS ${e.icu_training_load}</span></div>` : '';
+  const w = Object.assign({ sport: sp }, parseWorkout(sp, e.description)); const p = w.blocks.length ? predictTSS(w, set, sp === 'Run' ? pm : null) : null;
+  const pl = (c, l, v) => v == null ? '' : `<span class="pill" title="Prognose"><span class="dot" style="background:${c}"></span>${l} ${Math.round(v)}</span>`;
+  return `<div class="tss">${p ? pl('var(--s1)', 'W', p.watt) + pl('var(--s2)', 'HR', p.hr) : ''}${e.icu_training_load ? pl('var(--s3)', 'icu', e.icu_training_load) : ''}</div>`;
+}
 function tssLine(p) {
   if (!p) return '';
   const pill = (c, l, v) => `<span class="pill"><span class="dot" style="background:${c}"></span>${l} ${v == null ? '–' : Math.round(v)}</span>`;
@@ -657,6 +664,7 @@ async function renderCal() {
   let evs, acts, set;
   try { [evs, acts, set] = await Promise.all([events(a.id, ymd(start), ymd(end)), activities(a.id, ymd(start), ymd(end)), sportSettings(a.id)]);
     await ensurePower(acts); } catch (e) { status(e.message, true); return; }
+  const pm = await powerModel(a.id);
   if (stale(a.id) || S.view !== 'cal') return;
   const by = {}; const put = (d, x) => (by[d] = by[d] || []).push(x);
   (evs || []).forEach(e => put(e.start_date_local.slice(0, 10), { ev: e }));
@@ -673,7 +681,7 @@ async function renderCal() {
           const e = it.ev, sp = sportOf(e.type); T.pSec += e.moving_time || 0; T.pTss += e.icu_training_load || 0;
           h += `<div class="ev plan click ${paired.has(e.id) ? 'done' : ''}" data-ev="${e.id}" title="Details / bearbeiten">${e.category === 'WORKOUT' ? `<button class="x" data-del="${e.id}" title="Löschen">×</button>` : ''}
             <div class="t"><span class="dot" style="background:${SPORTS[sp].color}"></span>${esc(e.name || e.category)}</div>${e.hide_from_athlete ? '<span class="pill" style="margin:3px 0">🔒 versteckt</span>' : ''}
-            <div class="m">${[e.moving_time ? fmtH(e.moving_time) : '', e.distance ? km(e.distance) + ' km' : '', e.icu_training_load ? 'TSS ' + e.icu_training_load : ''].filter(Boolean).join(' · ')}</div></div>`;
+            <div class="m">${[e.moving_time ? fmtH(e.moving_time) : '', e.distance ? km(e.distance) + ' km' : ''].filter(Boolean).join(' · ')}</div>${planPills(e, sp, set, pm)}</div>`;
         } else {
           const x = it.act, m = metrics(x, set); T.sec += m.sec; T.m += m.dist; T.pT += m.pTSS || 0; T.hT += m.hTSS || 0;
           h += `<div class="ev click" data-act="${esc(x.id)}" title="Details"><div class="t"><span class="dot" style="background:${SPORTS[m.sport].color}"></span>${esc(x.name || x.type)}</div>
