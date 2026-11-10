@@ -789,7 +789,16 @@ async function renderProf() {
   $('#logout').onclick = () => { if (confirm('Von diesem Gerät abmelden?')) { LS.del('key'); location.reload(); } };
 }
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// Updates: beim Zurückkehren in die App nach neuer Version suchen und dann neu laden
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+    setInterval(check, 30 * 60 * 1000);
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded || !navigator.serviceWorker.controller) return; reloaded = true; if (!document.querySelector('dialog[open]')) location.reload(); });
+}
 init();
 </script>
 </body>
