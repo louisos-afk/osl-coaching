@@ -108,6 +108,10 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .ev .t{display:flex;align-items:center;gap:6px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:14px}
 .ev .m{color:var(--text2)}
 .ev.plan{border-style:dashed;background:transparent}
+.ev.race{border:1px solid var(--accent);background:var(--accent-soft)}
+.prio{flex:none;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700}
+.day .addr{opacity:0;border:0;background:var(--card2);width:22px;height:22px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1}
+.day:hover .addr{opacity:1}
 .ev.plan.done{opacity:.45}
 a.btn{text-decoration:none;color:inherit}
 .click{cursor:pointer}
@@ -615,6 +619,7 @@ async function renderHome() {
     const from = ymd(addDays(today, -27)), to = ymd(today);
     const [set, acts, well, evs] = await Promise.all([sportSettings(a.id), activities(a.id, from, to),
       iv('GET', `athlete/${a.id}/wellness?oldest=${ymd(addDays(today, -1))}&newest=${to}`), events(a.id, to, ymd(addDays(today, 7)))]);
+    const race = ((await events(a.id, to, ymd(addDays(today, 365)))) || []).filter(isRace).sort((x, y) => x.start_date_local.localeCompare(y.start_date_local))[0];
     await ensurePower(acts); if (stale(a.id)) return;
     const w = (well || []).filter(x => x.ctl != null).pop() || {};
     const wk = acts.filter(x => parseYmd(x.start_date_local) >= addDays(today, -6)).map(x => metrics(x, set));
@@ -626,10 +631,12 @@ async function renderHome() {
       ['TSS 7 Tage · HR', n0(sum('hTSS')), '', `LTHR ${set.Run?.lthr || '–'} bpm`],
       ['Umfang 7 Tage', km(sum('dist')), 'km', fmtH(sum('sec'))],
       ['Schwellenpace', fmtPace(thr), '/km', thr ? `VDOT ≈ ${(vo2(thr * 60) / 0.88).toFixed(1)}` : ''],
+      race ? ['Nächster Wettkampf', Math.round((parseYmd(race.start_date_local) - parseYmd(to)) / 864e5), 'Tage', `<span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} · ${dShort(parseYmd(race.start_date_local))}`]
+        : ['Nächster Wettkampf', '–', '', '<span class="muted">Im Kalender mit 🏁 eintragen</span>'],
     ].map(([l, v, u, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}<small>${u}</small></div><div class="d">${d}</div></div>`).join('');
     const rec = [...acts].sort((x, y) => y.start_date_local.localeCompare(x.start_date_local)).slice(0, 8);
     $('#recent').innerHTML = rec.length ? actTable(rec, set) : '<div class="muted">Keine Einheiten in den letzten 4 Wochen.</div>';
-    const plan = (evs || []).filter(e => e.category === 'WORKOUT');
+    const plan = (evs || []).filter(e => e.category === 'WORKOUT' || isRace(e));
     $('#next').innerHTML = plan.length ? plan.map(e => `<div class="row click" data-ev="${e.id}" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)">
       <span class="row"><span class="dot" style="background:${SPORTS[sportOf(e.type)].color}"></span><b>${esc(e.name)}</b></span>
       <span class="t2 small">${dShort(parseYmd(e.start_date_local))}${e.moving_time ? ' · ' + fmtH(e.moving_time) : ''}</span></div>`).join('')
@@ -675,9 +682,13 @@ async function renderCal() {
     const T = { pSec: 0, pTss: 0, sec: 0, m: 0, pT: 0, hT: 0 };
     for (let i = 0; i < 7; i++) {
       const d = addDays(start, w * 7 + i), k = ymd(d), items = by[k] || [];
-      h += `<div class="day ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${items.length ? '' : 'empty-day'}"><div class="dh"><b>${d.getDate()}.${d.getMonth() + 1}.</b><span class="row" style="gap:4px">${(weeks > 1 && d.getDate() === 1) || (w === 0 && i === 0) ? MON[d.getMonth()] : ''}<button class="add" data-d="${k}" title="Workout planen">+</button></span></div>`;
+      h += `<div class="day ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${items.length ? '' : 'empty-day'}"><div class="dh"><b>${d.getDate()}.${d.getMonth() + 1}.</b><span class="row" style="gap:4px">${(weeks > 1 && d.getDate() === 1) || (w === 0 && i === 0) ? MON[d.getMonth()] : ''}<button class="addr" data-r="${k}" title="Wettkampf eintragen">🏁</button><button class="add" data-d="${k}" title="Workout planen">+</button></span></div>`;
       for (const it of items) {
-        if (it.ev) {
+        if (it.ev && isRace(it.ev)) {
+          const e = it.ev, r = raceInfo(e);
+          h += `<div class="ev race click" data-ev="${e.id}" title="Wettkampf"><div class="t"><span class="prio">${r.prio}</span>🏁 ${esc(e.name || 'Wettkampf')}</div>
+            <div class="m">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', r.goal && e.distance && sportOf(e.type) === 'Run' ? fmtPace(e.distance / r.goal) + '/km' : ''].filter(Boolean).join(' · ')}</div></div>`;
+        } else if (it.ev) {
           const e = it.ev, sp = sportOf(e.type); T.pSec += e.moving_time || 0; T.pTss += e.icu_training_load || 0;
           h += `<div class="ev plan click ${paired.has(e.id) ? 'done' : ''}" data-ev="${e.id}" title="Details / bearbeiten">${e.category === 'WORKOUT' ? `<button class="x" data-del="${e.id}" title="Löschen">×</button>` : ''}
             <div class="t"><span class="dot" style="background:${SPORTS[sp].color}"></span>${esc(e.name || e.category)}</div>${e.hide_from_athlete ? '<span class="pill" style="margin:3px 0">🔒 versteckt</span>' : ''}
@@ -697,6 +708,7 @@ async function renderCal() {
   }
   $('#cal').innerHTML = h;
   $$('.day .add').forEach(b => b.onclick = () => planDialog(b.dataset.d));
+  $$('.day .addr').forEach(b => b.onclick = () => raceDialog(a.id, b.dataset.r));
   $$('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm('Geplantes Workout löschen? Es verschwindet auch von der Uhr.')) return;
     try { await iv('DELETE', `athlete/${a.id}/events/${b.dataset.del}`); renderCal(); } catch (e) { status(e.message, true); }
@@ -705,7 +717,7 @@ async function renderCal() {
 async function planDialog(date, wid) {
   const a = cur(); const pre = S.lib.find(w => w.id === wid);
   let sport = pre ? pre.sport : 'Run';
-  openDialog(`<h2>Workout planen</h2>
+  openDialog(`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Workout planen</h2><button class="btn sm" id="plRace">🏁 Stattdessen Wettkampf</button></div>
     <div class="row" style="margin:12px 0"><label class="f">Athlet<select id="plAth">${S.athletes.map(x => `<option value="${esc(x.id)}" ${x.id === a?.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
       <label class="f">Datum<input type="date" id="plDate" value="${date}"></label></div>
     <div class="sport-tabs" id="plSports">${Object.entries(SPORTS).map(([k, s]) => `<button class="chip ${k === sport ? 'on' : ''}" data-s="${k}">${s.icon} ${s.label}</button>`).join('')}</div>
@@ -717,6 +729,7 @@ async function planDialog(date, wid) {
       $('#plPrev').innerHTML = `<pre>${esc(workoutText(w))}</pre><div class="small t2" style="margin-top:6px">${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}</div>${tssLine(predictTSS(w, set, w.sport === 'Run' ? await powerModel($('#plAth').value) : null))}`; };
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
     $('#plW').onchange = prev; $('#plAth').onchange = prev; fill();
+    $('#plRace').onclick = () => raceDialog($('#plAth').value, $('#plDate').value);
     $('#plOk').onclick = async () => { const w = S.lib.find(x => x.id === $('#plW').value), aid = $('#plAth').value, d = $('#plDate').value; if (!w || !d) return;
       try { await planWorkout(aid, w, d); closeDialog(); status(`„${esc(w.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal(); } catch (e) { alert(e.message); } };
   });
@@ -846,9 +859,56 @@ function mountEditor(box, w, o = {}) {
   }
 }
 
+// =============== Wettkämpfe ===============
+const isRace = e => /^RACE_/.test(e.category || '');
+function raceInfo(e) { const m = String(e.description || '').match(/^Zielzeit:\s*([\d:]+)/m); return { prio: (e.category || 'RACE_A').slice(5) || 'A', goal: m ? parseTime(m[1]) : null, notes: String(e.description || '').replace(/^Zielzeit:.*\n?/m, '').trim() }; }
+const RACE_DISTS = { Run: [[5000, '5 km'], [10000, '10 km'], [21097.5, 'Halbmarathon'], [42195, 'Marathon']], Ride: [[40000, '40 km'], [90000, '90 km'], [180000, '180 km']], Swim: [[1500, '1,5 km'], [1900, '1,9 km'], [3800, '3,8 km']] };
+async function raceDialog(aid, date, e) {
+  const r = e ? raceInfo(e) : { prio: 'A', goal: null, notes: '' }; let sport = e ? sportOf(e.type) : 'Run';
+  if (sport === 'WeightTraining') sport = 'Run';
+  const set = await sportSettings(aid).catch(() => null), thr = set?.Run?.threshold_pace, vdot = thr ? vo2(thr * 60) / 0.88 : null;
+  openDialog(`<h2>🏁 ${e ? 'Wettkampf bearbeiten' : 'Wettkampf eintragen'}</h2>
+    <div class="stack" style="margin-top:12px">
+      <div class="row"><label class="f" style="flex:1">Name<input id="rcName" value="${esc(e?.name || '')}" placeholder="z.B. Köln Marathon"></label><label class="f">Datum<input type="date" id="rcDate" value="${date}"></label></div>
+      <div class="row">
+        <label class="f">Priorität<div class="seg" id="rcPrio">${['A', 'B', 'C'].map(p => `<button data-p="${p}" class="${p === r.prio ? 'on' : ''}">${p}</button>`).join('')}</div></label>
+        <label class="f">Sportart<select id="rcSport">${['Run', 'Ride', 'Swim'].map(k => `<option value="${k}" ${k === sport ? 'selected' : ''}>${SPORTS[k].icon} ${SPORTS[k].label}</option>`).join('')}</select></label>
+        <label class="f">Distanz (km)<input id="rcDist" type="number" step="any" value="${e?.distance ? +(e.distance / 1000).toFixed(3) : ''}" style="width:100px"></label>
+        <label class="f">&nbsp;<select id="rcDistPre"><option value="">Strecke …</option></select></label>
+        <label class="f">Zielzeit<input id="rcGoal" value="${r.goal ? fmtDur(r.goal) : ''}" placeholder="h:mm:ss" style="width:100px"></label></div>
+      <div class="small t2" id="rcInfo"></div>
+      <label class="f">Notizen<textarea id="rcNotes" rows="3" placeholder="Strecke, Anreise, Taktik …">${esc(r.notes)}</textarea></label>
+      <div class="small muted">A = Saisonhöhepunkt, B = wichtig, C = Trainingswettkampf. Wettkämpfe sind für den Athleten immer sichtbar.</div></div>
+    <div class="row" style="margin-top:16px;justify-content:space-between"><div>${e ? '<button class="btn danger" id="rcDel">Löschen</button>' : ''}</div>
+      <div class="row"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="rcSave">Speichern</button></div></div>`, () => {
+    let prio = r.prio;
+    $$('#rcPrio button').forEach(b => b.onclick = ev => { ev.preventDefault(); prio = b.dataset.p; $$('#rcPrio button').forEach(x => x.classList.toggle('on', x === b)); });
+    const fillPre = () => { $('#rcDistPre').innerHTML = '<option value="">Strecke …</option>' + RACE_DISTS[$('#rcSport').value].map(([d, n]) => `<option value="${d}">${n}</option>`).join(''); };
+    const info = () => { const d = parseFloat($('#rcDist').value) * 1000, g = parseTime($('#rcGoal').value), sp = $('#rcSport').value, out = [];
+      if (d && g) out.push(sp === 'Run' ? `Zielpace ${fmtPace(d / g)}/km` : sp === 'Swim' ? `Zielpace ${fmtPace(d / g, 100)}/100m` : `Ø ${(d / g * 3.6).toFixed(1).replace('.', ',')} km/h`);
+      if (sp === 'Run' && d && vdot) { const t = predict(vdot, d); out.push(`Prognose aus aktueller Schwelle: ${fmtDur(t)} (${fmtPace(d / t)}/km)`); }
+      $('#rcInfo').textContent = out.join(' · '); };
+    fillPre(); info();
+    $('#rcSport').onchange = () => { fillPre(); info(); };
+    $('#rcDistPre').onchange = ev => { if (ev.target.value) { $('#rcDist').value = +(ev.target.value / 1000).toFixed(4); info(); } };
+    $('#rcDist').oninput = info; $('#rcGoal').oninput = info;
+    $('#rcSave').onclick = async () => {
+      const d = $('#rcDate').value, name = $('#rcName').value.trim(); if (!d || !name) return alert('Name und Datum angeben.');
+      const g = parseTime($('#rcGoal').value), dist = parseFloat($('#rcDist').value);
+      const body = { category: 'RACE_' + prio, type: $('#rcSport').value, name, start_date_local: d + 'T00:00:00', hide_from_athlete: false,
+        description: (g ? `Zielzeit: ${fmtDur(g)}\n` : '') + $('#rcNotes').value.trim() };
+      if (dist) body.distance = dist * 1000;
+      try { if (e) await iv('PUT', `athlete/${aid}/events/${e.id}`, body); else await iv('POST', `athlete/${aid}/events`, body);
+        closeDialog(); status('Wettkampf gespeichert'); render(); } catch (err) { alert(err.message); }
+    };
+    if ($('#rcDel')) $('#rcDel').onclick = async () => { if (!confirm('Wettkampf löschen?')) return; try { await iv('DELETE', `athlete/${aid}/events/${e.id}`); closeDialog(); render(); } catch (err) { alert(err.message); } };
+  });
+}
+
 // =============== Detail: geplantes Workout ===============
 async function openEvent(aid, e) {
   const sport = sportOf(e.type);
+  if (isRace(e)) return raceDialog(aid, e.start_date_local.slice(0, 10), e);
   if (e.category !== 'WORKOUT') {
     openDialog(`<h2>${esc(e.name || e.category)}</h2><div class="small muted">${dLong(parseYmd(e.start_date_local))} · ${esc(e.category)}</div><pre style="margin-top:12px">${esc(e.description || '')}</pre>
       <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Schließen</button></div>`); return;
