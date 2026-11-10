@@ -13,7 +13,8 @@ const NAMES = new Set(['$', '$$', 'esc', 'LS', 'status', 'iv', 'pool', 'pad', 'y
   'parseWorkout', 'thrFor', 'zoneBounds', 'HRZ_F', 'factor', 'flatten', 'totals', 'hrFracOf', 'powerModel', 'predictTSS', 'stepTargetText',
   'sportSettings', 'events', 'activities', 'hasWatts', 'cachedPower', 'ensurePower', 'metrics', 'initials', 'openDialog', 'closeDialog',
   'isRace', 'raceInfo', 'downsample', 'chart', 'matchPlan', 'compliance', 'compColor', 'compPill', 'stepRange', 'compareSteps',
-  'planVsActualHtml', 'formTxt', 'FEEL', 'feedbackPills', 'loadMessages']);
+  'planVsActualHtml', 'formTxt', 'FEEL', 'feedbackPills', 'loadMessages',
+  'economy', 'n1', 'ECO', 'ecoRuns', 'ecoKpis', 'ecoCards', 'powerCurveHtml']);
 
 const ast = acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'script', allowAwaitOutsideFunction: true });
 const out = [], found = new Set();

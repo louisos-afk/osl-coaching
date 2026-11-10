@@ -66,7 +66,8 @@ dialog.full{max-width:760px;width:100vw;max-height:100dvh;border-radius:18px}
 <span class="status" id="status" style="position:fixed;top:8px;right:12px;z-index:20"></span>
 <nav class="bottomnav" id="nav">
   <button data-v="plan"><span>📅</span>Plan</button>
-  <button data-v="hist"><span>📈</span>Verlauf</button>
+  <button data-v="hist"><span>🗓</span>Verlauf</button>
+  <button data-v="ana"><span>📈</span>Analyse</button>
   <button data-v="prof"><span>👤</span>Profil</button>
 </nav>
 <dialog id="dlg" class="full"><div id="dlgBody"></div></dialog>
@@ -103,7 +104,7 @@ function login(err) {
 }
 $$('#nav button').forEach(b => b.onclick = () => nav(b.dataset.v));
 function nav(v) { S.view = v; LS.set('view', v); $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); window.scrollTo(0, 0);
-  ({ plan: renderPlan, hist: renderHist, prof: renderProf }[v] || renderPlan)(); }
+  ({ plan: renderPlan, hist: renderHist, ana: renderAna, prof: renderProf }[v] || renderPlan)(); }
 const loading = () => { $('#view').innerHTML = '<div class="empty"><span class="spin"></span></div>'; };
 const metaOf = (e, set) => { const w = wOf(e), t = w.blocks.length ? totals(w, set) : null;
   return [e.moving_time ? fmtH(e.moving_time) : t?.sec ? fmtH(t.sec) : '', e.distance ? km(e.distance) + ' km' : t?.m ? '≈ ' + km(t.m) + ' km' : '', e.icu_training_load ? 'TSS ' + e.icu_training_load : ''].filter(Boolean).join(' · '); };
@@ -208,7 +209,8 @@ async function openAct(a) {
   const id = S.me.id, set = await sportSettings(id).catch(() => ({})), m = metrics(a, set), sp = SPORTS[m.sport];
   const evs = ((await events(id, a.start_date_local.slice(0, 10), a.start_date_local.slice(0, 10)).catch(() => [])) || []).filter(visible);
   const peId = Object.keys(matchPlan(evs, [a]))[0], pe = evs.find(e => e.id === a.paired_event_id) || (peId ? S.evIndex[peId] : null);
-  const kp = [['Distanz', m.dist ? km(m.dist) + ' km' : '–'], ['Zeit', fmtDur(m.sec)], ['Pace', m.sport === 'Run' ? fmtPace(m.speed) + '/km' : '–'], ['Ø Puls', a.average_heartrate ? n0(a.average_heartrate) : '–'], ['Belastung', n0(a.icu_training_load)], ['Höhenmeter', a.total_elevation_gain ? n0(a.total_elevation_gain) + ' m' : '–']];
+  const kp = [['Distanz', m.dist ? km(m.dist) + ' km' : '–'], ['Zeit', fmtDur(m.sec)], ['Pace', m.sport === 'Run' ? fmtPace(m.speed) + '/km' : '–'], ['Ø Puls', a.average_heartrate ? n0(a.average_heartrate) : '–'], ['Belastung', n0(a.icu_training_load)], ['Höhenmeter', a.total_elevation_gain ? n0(a.total_elevation_gain) + ' m' : '–'],
+    ...(m.sport === 'Run' ? [['Meter / Herzschlag', n2(m.efPace)], ...ecoKpis(a)] : [])];
   let rpe = a.icu_rpe || null, feel = a.feel || null;
   openDialog(`<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0">${sp.icon} ${esc(a.name || a.type)}</h2><div class="small muted" style="margin-top:4px">${WD[parseYmd(a.start_date_local).getDay()]}, ${dLong(parseYmd(a.start_date_local))}, ${a.start_date_local.slice(11, 16)} Uhr</div></div><button class="btn sm" onclick="closeDialog()">Schließen</button></div>
     <div class="kpis" style="margin:16px 0">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px 12px"><div class="l">${l}</div><div class="v" style="font-size:19px">${v}</div></div>`).join('')}</div>
@@ -264,6 +266,31 @@ async function renderHist() {
   h += `<div style="text-align:center;margin-top:16px"><button class="btn" id="more">Ältere laden</button></div>`;
   $('#view').innerHTML = h;
   $('#more').onclick = () => { S.histDays += 30; renderHist(); };
+}
+
+// ---------- Analyse ----------
+const ANA_R = [['4W', 28], ['3M', 91], ['6M', 182], ['1J', 365]];
+async function renderAna() {
+  const sel = LS.get('anaRange', '3M'), days = (ANA_R.find(r => r[0] === sel) || ANA_R[1])[1], id = S.me.id, today = new Date(), from = ymd(addDays(today, -days + 1)), to = ymd(today);
+  $('#view').innerHTML = `<div class="row" style="justify-content:space-between;margin:6px 0 4px"><div class="seg" id="anaR">${ANA_R.map(([r]) => `<button data-r="${r}" class="${r === sel ? 'on' : ''}">${r}</button>`).join('')}</div><span class="small muted">${dShort(parseYmd(from))} – ${dShort(today)}</span></div><div id="anaBody"><div class="empty"><span class="spin"></span></div></div>`;
+  $$('#anaR button').forEach(b => b.onclick = () => { LS.set('anaRange', b.dataset.r); renderAna(); });
+  let acts, set, well;
+  try { [acts, set, well] = await Promise.all([activities(id, from, to), sportSettings(id), iv('GET', `athlete/${id}/wellness?oldest=${from}&newest=${to}`)]); await ensurePower(acts); }
+  catch (e) { $('#anaBody').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  if (S.view !== 'ana') return;
+  const runs = acts.filter(a => sportOf(a.type) === 'Run' && a.moving_time > 900).map(a => Object.assign(metrics(a, set), { date: parseYmd(a.start_date_local), name: a.name })).sort((x, y) => x.date - y.date);
+  const roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
+  const wl = (well || []).filter(x => x.ctl != null);
+  $('#anaBody').innerHTML = `<h2 class="sec">Fitness</h2><div class="card"><div class="small muted" style="margin-bottom:8px">Fitness steigt mit regelmäßigem Training, Ermüdung reagiert schnell auf harte Tage.</div><div id="anaFit"></div></div>
+    <h2 class="sec">Effizienz</h2><div class="card"><h3>Meter pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Wie weit du pro Herzschlag kommst. Steigt der Wert, wirst du fitter.</div><div id="anaEfP"></div></div>
+    <div class="card" style="margin-top:12px"><h3>Watt pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Leistung pro Herzschlag (Stryd). Steigt der Wert, wirst du fitter.</div><div id="anaEfW"></div></div>
+    <h2 class="sec">Laufstil (Stryd)</h2><div id="anaEco"></div>
+    <h2 class="sec">Leistungskurve</h2><div class="card tbl-wrap" id="anaPc"><span class="spin"></span></div>`;
+  chart($('#anaFit'), [{ name: 'Fitness', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Ermüdung', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0 });
+  for (const [el, k, c] of [['#anaEfP', 'efPace', 'var(--s3)'], ['#anaEfW', 'efW', 'var(--s1)']]) { const rs = runs.filter(r => r[k]);
+    chart($(el), [{ name: 'Einzelner Lauf', color: c, scatter: true, pts: rs.map(r => ({ x: r.date, y: r[k], label: r.name })) }, { name: 'Ø 5 Läufe', color: c, pts: roll(rs, k) }], { yfmt: n2, empty: 'Keine Daten im Zeitraum.' }); }
+  ecoCards($('#anaEco'), acts, 'stack');
+  powerCurveHtml(id).then(h => { if ($('#anaPc')) $('#anaPc').innerHTML = h; });
 }
 
 // ---------- Profil ----------
