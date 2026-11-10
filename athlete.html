@@ -665,6 +665,14 @@ function zoneName(sport, st, set) {
   const f = factor(sport, st, set) * 100; let i = z.findIndex(u => f <= u); if (i < 0) i = z.length - 1;
   return names?.[i] || 'Z' + (i + 1);
 }
+// Ziel immer als Pace (bzw. Puls/Watt), nie als Prozent
+function athleteTarget(sport, st, set) {
+  const unit = sport === 'Swim' ? '/100m' : '/km';
+  if ((st.mode || 'pct') === 'abs') { const [x, y] = st.ramp ? [st.pSlow, st.pFast] : [Math.min(st.pSlow, st.pFast), Math.max(st.pSlow, st.pFast)];
+    return `${mmss(x)}${x !== y ? '–' + mmss(y) : ''} ${unit}`; }
+  const t = stepTargetText(sport, st, set);
+  return t ? t.replace(/(\/km|\/100m)$/, ' $1') : esc(stepText(sport, st).slice(2));
+}
 function durTxt(st) { return st.unit === 'm' ? `${st.dur} min` : st.unit === 's' ? `${st.dur} s` : st.unit === 'km' ? `${String(st.dur).replace('.', ',')} km` : `${st.dur} m`; }
 async function openWorkout(e) {
   const set = await sportSettings(S.me.id).catch(() => null), w = wOf(e), sp = SPORTS[w.sport];
@@ -679,7 +687,7 @@ async function openWorkout(e) {
   let steps = '';
   if (sp.strength) steps = `<div class="sblock">${(w.ex || []).map(x => `<div class="srow"><div class="du">${x.sets}×${x.reps}</div><div><div class="tg">${esc(x.name)}</div><div class="zn">${esc(x.load || '')}</div></div></div>`).join('')}</div>`;
   else if (w.blocks.length) steps = w.blocks.map(b => `<div class="sblock"><div class="sh"><span>${b.reps > 1 ? b.reps + '× ' : ''}${esc(b.label || (b.reps > 1 ? 'Wiederholungen' : 'Abschnitt'))}</span><span class="small t2">${fmtH(flatten({ sport: w.sport, blocks: [b] }, set).reduce((s, x) => s + x.sec, 0))}</span></div>
-      ${b.steps.map(st => `<div class="srow"><div class="du">${durTxt(st)}</div><div><div class="tg">${st.ramp ? '↗ ' : ''}${stepTargetText(w.sport, st, set) || esc(stepText(w.sport, st).slice(2))}</div><div class="zn">${esc([zoneName(w.sport, st, set), st.note].filter(Boolean).join(' · '))}</div></div></div>`).join('')}</div>`).join('');
+      ${b.steps.map(st => `<div class="srow"><div class="du">${durTxt(st)}</div><div><div class="tg">${st.ramp ? '↗ ' : ''}${athleteTarget(w.sport, st, set)}</div><div class="zn">${esc([zoneName(w.sport, st, set), st.note].filter(Boolean).join(' · '))}</div></div></div>`).join('')}</div>`).join('');
   openDialog(`<div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0">${sp.icon} ${esc(e.name)}</h2><div class="small muted" style="margin-top:4px">${WD[parseYmd(e.start_date_local).getDay()]}, ${dLong(parseYmd(e.start_date_local))}</div></div><button class="btn sm" onclick="closeDialog()">Schließen</button></div>
     <div class="kpis" style="margin:16px 0 10px">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px 12px"><div class="l">${l}</div><div class="v" style="font-size:19px">${v}</div></div>`).join('')}</div>
     ${w.desc ? `<div class="card" style="white-space:pre-wrap;margin-bottom:12px">${esc(w.desc)}</div>` : ''}
