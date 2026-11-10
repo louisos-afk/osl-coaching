@@ -132,7 +132,8 @@ dialog.wide{max-width:980px;max-height:92vh}
 .block{border:1px solid var(--line2);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--bg2)}
 .block .bh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .step{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.step .pv{color:var(--text2);font-size:12px;min-width:120px;font-variant-numeric:tabular-nums}
+.step .pv{color:var(--text2);font-size:12px;flex:1;min-width:90px;font-variant-numeric:tabular-nums}
+.step select,.step input{padding:6px 7px}
 .icon-x{border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
 .icon-x:hover{color:var(--warn)}
 .profile{display:flex;height:56px;align-items:flex-end;gap:2px;margin:4px 0 8px}
@@ -280,12 +281,39 @@ const SPORTS = {
   WeightTraining: { label: 'Kraft', icon: '🏋', color: 'var(--s2)', strength: true },
 };
 const sportOf = t => SPORTS[t] ? t : /Ride/.test(t || '') ? 'Ride' : /Swim/.test(t || '') ? 'Swim' : /Weight|Strength|Workout/.test(t || '') ? 'WeightTraining' : 'Run';
-const STEP_RE = /^-\s+(\d+(?:\.\d+)?)(mtr|km|m|s)\s+(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?%(?:\s+Pace)?(?:\s+(.*))?$/;
 const EX_RE = /^•\s*(.+?):\s*(\d+)\s*x\s*(\d+)(?:\s*@\s*(.+))?$/;
-
+// ---- Schritte: Zieltypen ----
+// mode: pct (% Schwelle/FTP/CSS), abs (Pace min:s), zone (Pace-Zone), lthr (% LTHR), hrz (HF-Zone). ramp: Verlauf von–bis.
+const TMODES = {
+  Run: [['pct', '% Schwelle'], ['abs', 'Pace min:s/km'], ['zone', 'Pace-Zone'], ['lthr', '% LTHR'], ['hrz', 'HF-Zone']],
+  Swim: [['pct', '% CSS'], ['abs', 'Pace min:s/100m'], ['zone', 'Pace-Zone']],
+  Ride: [['pct', '% FTP'], ['lthr', '% LTHR'], ['hrz', 'HF-Zone']],
+};
+const secOf = s => { const p = String(s).trim().split(':').map(Number); return p.length === 2 && !p.some(isNaN) ? p[0] * 60 + p[1] : NaN; };
+const mmss = sec => `${Math.floor(sec / 60)}:${pad(Math.round(sec % 60))}`;
+const perOf = sport => sport === 'Swim' ? 100 : 1000;
+const rng = (a, b, f = x => x) => a === b || b == null ? f(a) : `${f(a)}-${f(b)}`;
 function stepText(sport, st) {
-  const u = st.unit === 'km' ? `${st.dur}km` : `${st.dur}${st.unit}`;
-  return `- ${u} ${st.lo === st.hi ? st.lo : st.lo + '-' + st.hi}%${SPORTS[sport].suffix}${st.note ? ' ' + st.note : ''}`;
+  const d = `${st.dur}${st.unit}${st.ramp ? ' ramp' : ''}`, m = st.mode || 'pct';
+  let t;
+  if (m === 'abs') t = `${rng(st.pSlow, st.pFast, mmss)}${sport === 'Swim' ? '/100m' : '/km'} Pace`;
+  else if (m === 'zone') t = `Z${st.z1}${st.z2 && st.z2 !== st.z1 ? '-Z' + st.z2 : ''} Pace`;
+  else if (m === 'hrz') t = `Z${st.z1}${st.z2 && st.z2 !== st.z1 ? '-Z' + st.z2 : ''} HR`;
+  else if (m === 'lthr') t = `${rng(st.lo, st.hi)}% LTHR`;
+  else t = `${rng(st.lo, st.hi)}%${SPORTS[sport].suffix}`;
+  return `- ${d} ${t}${st.note ? ' ' + st.note : ''}`;
+}
+const LINE_RE = /^-\s+(\d+(?:\.\d+)?)(mtr|km|m|s)\s+(ramp\s+)?(.+)$/i;
+function parseStep(line) {
+  const L = line.match(LINE_RE); if (!L) return null;
+  const st = { dur: +L[1], unit: L[2].toLowerCase(), ramp: !!L[3], note: '' }, t = L[4]; let m;
+  if ((m = t.match(/^(\d+:\d{2})(?:-(\d+:\d{2}))?\/(km|100m)\s+Pace(?:\s+(.*))?$/i))) Object.assign(st, { mode: 'abs', pSlow: secOf(m[1]), pFast: secOf(m[2] || m[1]), note: m[4] || '' });
+  else if ((m = t.match(/^Z(\d)(?:-Z(\d))?\s+Pace(?:\s+(.*))?$/i))) Object.assign(st, { mode: 'zone', z1: +m[1], z2: +(m[2] || m[1]), note: m[3] || '' });
+  else if ((m = t.match(/^Z(\d)(?:-Z(\d))?\s+HR(?:\s+(.*))?$/i))) Object.assign(st, { mode: 'hrz', z1: +m[1], z2: +(m[2] || m[1]), note: m[3] || '' });
+  else if ((m = t.match(/^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?%\s+LTHR(?:\s+(.*))?$/i))) Object.assign(st, { mode: 'lthr', lo: +m[1], hi: +(m[2] || m[1]), note: m[3] || '' });
+  else if ((m = t.match(/^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?%(?:\s+Pace)?(?:\s+(.*))?$/i))) Object.assign(st, { mode: 'pct', lo: +m[1], hi: +(m[2] || m[1]), note: m[3] || '' });
+  else return null;
+  return st;
 }
 function workoutText(w) {
   if (SPORTS[w.sport].strength) return (w.ex || []).map(e => `• ${e.name}: ${e.sets}x${e.reps}${e.load ? ' @ ' + e.load : ''}`).join('\n');
@@ -298,39 +326,85 @@ function parseWorkout(sport, text) {
     const lines = para.split('\n').map(l => l.trim()).filter(Boolean); if (!lines.length) continue;
     if (lines.every(l => EX_RE.test(l))) { lines.forEach(l => { const m = l.match(EX_RE); ex.push({ name: m[1], sets: +m[2], reps: +m[3], load: m[4] || '' }); }); continue; }
     let head = null, body = lines;
-    if (!STEP_RE.test(lines[0])) { head = lines[0]; body = lines.slice(1); }
-    if (!body.length || !body.every(l => STEP_RE.test(l))) { desc.push(lines.join('\n')); continue; }
+    if (!parseStep(lines[0])) { head = lines[0]; body = lines.slice(1); }
+    if (!body.length || !body.every(l => parseStep(l))) { desc.push(lines.join('\n')); continue; }
     let label = head || '', reps = 1; const m = label.match(/^(.*?)\s*(\d+)x$/); if (m) { label = m[1]; reps = +m[2]; }
-    blocks.push({ label, reps, steps: body.map(l => { const x = l.match(STEP_RE); return { dur: +x[1], unit: x[2], lo: +x[3], hi: +(x[4] || x[3]), note: x[5] || '' }; }) });
+    blocks.push({ label, reps, steps: body.map(parseStep) });
   }
   return { desc: desc.join('\n\n'), blocks, ex };
 }
 // Schwelle je Sport: Lauf/Schwimmen m/s, Rad Watt
 function thrFor(set, sport) { if (!set) return null; if (sport === 'Ride') return set.Ride?.ftp || null; if (sport === 'Swim') return set.Swim?.threshold_pace || null; if (sport === 'Run') return set.Run?.threshold_pace || null; return null; }
-function flatten(w, thr) {
-  const out = []; if (SPORTS[w.sport].strength) return out;
+// Grenzen einer Zone in % (Zonen sind Obergrenzen in %)
+function zoneBounds(zones, z1, z2) { const lo = z1 > 1 ? zones[z1 - 2] : Math.min(60, zones[0] || 60), up = zones[z2 - 1] >= 999 ? (zones[z2 - 2] || 100) + 10 : zones[z2 - 1]; return [lo, up]; }
+const HRZ_F = [0, 0.7, 0.8, 0.88, 0.95, 1, 1.05, 1.1];
+// Faktor = Intensitaet relativ zur Schwelle (Geschwindigkeit bzw. Leistung)
+function factor(sport, st, set) {
+  const m = st.mode || 'pct', thr = thrFor(set, sport), cfg = set && set[sport === 'Swim' ? 'Swim' : sport === 'Ride' ? 'Ride' : 'Run'];
+  if (m === 'abs') { const per = perOf(sport), v = (per / st.pSlow + per / st.pFast) / 2; return thr ? v / thr : 0.85; }
+  if (m === 'zone') { const z = cfg?.pace_zones; if (!z || !z.length) return 0.85; const [a, b] = zoneBounds(z, st.z1, st.z2); return (a + b) / 200; }
+  if (m === 'hrz') return (HRZ_F[st.z1] + HRZ_F[st.z2 || st.z1]) / 2 || 0.8;
+  if (m === 'lthr') return Math.max(0.5, 1 - (1 - (st.lo + st.hi) / 200) * 1.5);
+  return (st.lo + st.hi) / 200;
+}
+function flatten(w, set) {
+  const out = []; if (SPORTS[w.sport].strength) return out; const thr = thrFor(set, w.sport);
   for (const b of w.blocks) for (let r = 0; r < (b.reps || 1); r++) for (const st of b.steps) {
-    const f = (st.lo + st.hi) / 200; let sec = null, m = 0;
+    const f = factor(w.sport, st, set); let sec = null, m = 0;
     if (st.unit === 'm') sec = st.dur * 60; else if (st.unit === 's') sec = +st.dur;
     if (w.sport === 'Ride') { out.push({ sec: sec || 0, m: 0, f }); continue; }
-    const v = thr ? thr * f : null;
+    const v = (st.mode === 'abs') ? (perOf(w.sport) / st.pSlow + perOf(w.sport) / st.pFast) / 2 : thr ? thr * f : null;
     if (sec != null) m = v ? v * sec : 0; else { m = st.unit === 'km' ? st.dur * 1000 : +st.dur; sec = v ? m / v : 0; }
     out.push({ sec, m, f });
   }
   return out;
 }
-function totals(w, thr) {
+function totals(w, set) {
   if (SPORTS[w.sport].strength) return { sec: (w.dur || 0) * 60, m: 0, tss: null };
-  const fl = flatten(w, thr); let sec = 0, m = 0, tss = 0;
-  for (const x of fl) { sec += x.sec; m += x.m; tss += x.sec * x.f * x.f / 36; }
+  let sec = 0, m = 0, tss = 0; for (const x of flatten(w, set)) { sec += x.sec; m += x.m; tss += x.sec * x.f * x.f / 36; }
   return { sec, m, tss };
 }
-function stepTargetText(sport, st, thr) {
+function stepTargetText(sport, st, set) {
+  const m = st.mode || 'pct', thr = thrFor(set, sport), per = perOf(sport), unit = sport === 'Swim' ? '/100m' : '/km', cfg = set && set[sport === 'Swim' ? 'Swim' : sport === 'Ride' ? 'Ride' : 'Run'];
+  if (m === 'abs') return thr ? `≈ ${Math.round(per / st.pFast / thr * 100)} % Schwelle` : '';
+  if (m === 'zone') { const z = cfg?.pace_zones; if (!z || !thr) return ''; const [a, b] = zoneBounds(z, st.z1, st.z2); return `${fmtPace(thr * b / 100, per)}–${fmtPace(thr * a / 100, per)}${unit}`; }
+  if (m === 'lthr') return cfg?.lthr ? `${Math.round(cfg.lthr * st.lo / 100)}–${Math.round(cfg.lthr * st.hi / 100)} bpm` : '';
+  if (m === 'hrz') { const z = cfg?.hr_zones; if (!z) return ''; return `${st.z1 > 1 ? z[st.z1 - 2] + 1 : 0}–${z[(st.z2 || st.z1) - 1]} bpm`; }
   if (!thr) return '';
   if (sport === 'Ride') return `${Math.round(thr * st.lo / 100)}–${Math.round(thr * st.hi / 100)} W`;
-  const per = sport === 'Swim' ? 100 : 1000;
-  return `${fmtPace(thr * st.hi / 100, per)}–${fmtPace(thr * st.lo / 100, per)}${sport === 'Swim' ? '/100m' : '/km'}`;
+  return `${fmtPace(thr * st.hi / 100, per)}–${fmtPace(thr * st.lo / 100, per)}${unit}`;
 }
+// Vorschlaege in % der Schwelle: Zonen, Daniels-Bereiche und Wettkampftempo (aus VDOT der aktuellen Schwelle)
+function pctPresets(sport, set) {
+  const out = SPORTS[sport].presets.map(([n, lo, hi]) => [n, lo, hi]);
+  const thr = sport === 'Run' && thrFor(set, 'Run');
+  if (thr) {
+    const v = vo2(thr * 60) / 0.88, p = s => Math.round(s / thr * 100);
+    out.push(['— Daniels —'], ['E Easy', p(speedAt(v, 0.62)), p(speedAt(v, 0.72))], ['M Marathon', p(42195 / predict(v, 42195)) - 1, p(42195 / predict(v, 42195)) + 1],
+      ['T Threshold', p(speedAt(v, 0.87)), p(speedAt(v, 0.89))], ['I Interval', p(speedAt(v, 0.965)), p(speedAt(v, 0.985))], ['R Repetition', p(1609.34 / predict(v, 1609.34)) - 1, p(1609.34 / predict(v, 1609.34)) + 1],
+      ['— Wettkampftempo —'], ...[[5000, '5 km'], [10000, '10 km'], [21097.5, 'Halbmarathon'], [42195, 'Marathon']].map(([d, n]) => { const x = p(d / predict(v, d)); return [n + '-Tempo', x - 1, x + 1]; }));
+  }
+  return out;
+}
+// Block-Vorlagen
+function blockTemplate(sport, key) {
+  const S1 = (dur, unit, lo, hi) => ({ dur, unit, mode: 'pct', lo, hi, note: '' });
+  const ride = sport === 'Ride', swim = sport === 'Swim';
+  const easy = ride ? [56, 70] : [75, 85], rest = ride ? [45, 55] : [60, 75];
+  const T = {
+    warm: () => ({ label: 'Warmup', reps: 1, steps: [swim ? S1(400, 'mtr', ...easy) : S1(15, 'm', ...easy)] }),
+    cool: () => ({ label: 'Cooldown', reps: 1, steps: [swim ? S1(200, 'mtr', ...easy) : S1(10, 'm', ...easy)] }),
+    int: () => ({ label: 'Intervalle', reps: 5, steps: swim ? [S1(100, 'mtr', 98, 102), S1(15, 's', 50, 50)] : [S1(3, 'm', ...(ride ? [106, 115] : [104, 108])), S1(2, 'm', ...rest)] }),
+    pyr: () => ({ label: 'Pyramide', reps: 1, steps: [1, 2, 3, 2, 1].flatMap(n => [S1(n, 'm', ...(ride ? [106, 115] : [104, 110])), S1(1, 'm', ...rest)]) }),
+    prog: () => ({ label: 'Progressiv', reps: 1, steps: ride ? [S1(10, 'm', 70, 75), S1(10, 'm', 80, 85), S1(10, 'm', 88, 94)] : [S1(10, 'm', 85, 88), S1(10, 'm', 90, 93), S1(10, 'm', 96, 100)] }),
+    str: () => ({ label: 'Steigerungen', reps: 6, steps: [S1(20, 's', ...(ride ? [130, 150] : [112, 120])), S1(60, 's', ...rest)] }),
+    fart: () => ({ label: 'Fahrtspiel', reps: 8, steps: [S1(1, 'm', ...(ride ? [100, 110] : [100, 106])), S1(1, 'm', ...(ride ? [55, 65] : [75, 82]))] }),
+    tempo: () => ({ label: 'Tempo', reps: 1, steps: [S1(20, 'm', ...(ride ? [80, 87] : [92, 96]))] }),
+    blank: () => ({ label: '', reps: 1, steps: [swim ? S1(100, 'mtr', ...easy) : S1(10, 'm', ...easy)] }),
+  };
+  return (T[key] || T.blank)();
+}
+const BLOCK_TPL = [['blank', 'Leer'], ['warm', 'Warmup'], ['int', 'Intervalle'], ['pyr', 'Pyramide 1-2-3-2-1'], ['prog', 'Progressiv'], ['tempo', 'Tempo-Block'], ['fart', 'Fahrtspiel'], ['str', 'Steigerungen'], ['cool', 'Cooldown']];
 
 // =============== Laden ===============
 async function init() {
@@ -589,7 +663,7 @@ async function planDialog(date, wid) {
     <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="plOk">In Kalender legen</button></div>`, () => {
     const fill = () => { const list = S.lib.filter(w => w.sport === sport); $('#plW').innerHTML = list.map(w => `<option value="${esc(w.id)}" ${w.id === wid ? 'selected' : ''}>${esc(w.name)}</option>`).join(''); if (!$('#plW').value && list[0]) $('#plW').value = list[0].id; prev(); };
     const prev = async () => { const w = S.lib.find(x => x.id === $('#plW').value); if (!w) { $('#plPrev').innerHTML = '<div class="muted">Keine Workouts in dieser Sportart.</div>'; return; }
-      const set = await sportSettings($('#plAth').value).catch(() => null); const t = totals(w, thrFor(set, w.sport));
+      const set = await sportSettings($('#plAth').value).catch(() => null); const t = totals(w, set);
       $('#plPrev').innerHTML = `<pre>${esc(workoutText(w))}</pre><div class="small t2" style="margin-top:6px">${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}${t.tss ? ' · TSS ≈ ' + Math.round(t.tss) : ''}</div>`; };
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
     $('#plW').onchange = prev; $('#plAth').onchange = prev; fill();
@@ -598,7 +672,7 @@ async function planDialog(date, wid) {
   });
 }
 async function planWorkout(aid, w, date) {
-  const set = await sportSettings(aid).catch(() => null); const t = totals(w, thrFor(set, w.sport));
+  const set = await sportSettings(aid).catch(() => null); const t = totals(w, set);
   const ev = { category: 'WORKOUT', type: w.sport, start_date_local: date + 'T00:00:00', name: w.name, description: workoutDescription(w), external_id: `coach:${w.id}:${date}`, hide_from_athlete: hiddenFor(date) };
   if (t.sec) ev.moving_time = Math.round(t.sec);
   return iv('POST', `athlete/${aid}/events/bulk?upsert=true`, [ev]);
@@ -634,6 +708,14 @@ function renderEditor() {
       $('[data-a=plan]', el).onclick = () => { if (!S.athletes.length) return alert('Noch keine Athleten.'); planDialog(ymd(new Date()), w.id); };
     } });
 }
+// Zieltyp wechseln, Werte sinnvoll vorbelegen
+function switchMode(st, m) {
+  st.mode = m;
+  if (m === 'abs' && !st.pSlow) { st.pSlow = 300; st.pFast = 290; }
+  if ((m === 'zone' || m === 'hrz') && !st.z1) { st.z1 = 2; st.z2 = 2; }
+  if (m === 'lthr' && (st.lo == null || st.lo > 110)) { st.lo = 85; st.hi = 90; }
+  if (m === 'pct' && st.lo == null) { st.lo = 75; st.hi = 85; }
+}
 // Generischer Builder: Bibliothek (Autosave) und geplante Workouts im Kalender (Speichern-Knopf)
 function mountEditor(box, w, o = {}) {
   const sp = SPORTS[w.sport], changed = () => o.onChange && o.onChange(), redraw = () => mountEditor(box, w, o);
@@ -645,16 +727,23 @@ function mountEditor(box, w, o = {}) {
         <input data-e="load" value="${esc(e.load)}" placeholder="Last, z.B. 60kg / RPE 7" style="width:170px"><button class="icon-x" data-delex>×</button></div>`).join('')}
         <div><button class="btn sm" data-k="addEx">+ Übung</button></div></div>`;
   } else {
-    const opts = sp.presets.map(([n, lo, hi]) => `<option value="${lo}-${hi}">${n} ${lo}–${hi}%</option>`).join('');
-    body = `<div class="small muted">Ziel in ${sp.tgt}${w.sport === 'Ride' ? '' : ' (100 % = Schwelle, mehr = schneller)'}</div>
+    const modes = TMODES[w.sport] || [['pct', sp.tgt]];
+    const zsel = (k, v) => `<select data-s="${k}" style="width:62px">${[1, 2, 3, 4, 5, 6, 7].map(z => `<option value="${z}" ${z === v ? 'selected' : ''}>Z${z}</option>`).join('')}</select>`;
+    const tgt = st => { const m = st.mode || 'pct';
+      if (m === 'abs') return `<input data-s="pSlow" value="${mmss(st.pSlow || 300)}" style="width:66px" title="langsam / Start">–<input data-s="pFast" value="${mmss(st.pFast || 290)}" style="width:66px" title="schnell / Ende">`;
+      if (m === 'zone' || m === 'hrz') return `${zsel('z1', st.z1 || 2)}–${zsel('z2', st.z2 || st.z1 || 2)}`;
+      return `<input type="number" data-s="lo" value="${st.lo}" style="width:60px">–<input type="number" data-s="hi" value="${st.hi}" style="width:60px">%${m === 'pct' ? '<select data-preset style="width:98px"><option value="">Vorlage …</option></select>' : ''}`; };
+    body = `<div class="small muted">Pro Schritt Zieltyp wählen. % Schwelle: 100 % = Schwellenpace, mehr = schneller. „Verlauf“ erzeugt eine Rampe (von–bis).</div>
       ${w.blocks.map((b, bi) => `<div class="block" data-bi="${bi}"><div class="bh"><input data-f="label" value="${esc(b.label)}" placeholder="Abschnitt, z.B. Warmup" style="flex:1;min-width:140px">
-        <label class="row small t2">Wdh.<input type="number" min="1" data-f="reps" value="${b.reps}" style="width:60px"></label><button class="btn ghost sm" data-delblock>Block löschen</button></div>
-        ${b.steps.map((st, si) => `<div class="step" data-si="${si}"><input type="number" step="any" min="0" data-s="dur" value="${st.dur}">
+        <label class="row small t2">Wdh.<input type="number" min="1" data-f="reps" value="${b.reps}" style="width:60px"></label>
+        <button class="btn ghost sm" data-upblock title="nach oben">↑</button><button class="btn ghost sm" data-dupblock>Kopieren</button><button class="btn ghost sm" data-delblock>Löschen</button></div>
+        ${b.steps.map((st, si) => `<div class="step" data-si="${si}"><input type="number" step="any" min="0" data-s="dur" value="${st.dur}" style="width:64px">
           <select data-s="unit">${Object.entries(sp.units).map(([k, l]) => `<option value="${k}" ${k === st.unit ? 'selected' : ''}>${l}</option>`).join('')}</select>
-          <input type="number" data-s="lo" value="${st.lo}" style="width:62px">–<input type="number" data-s="hi" value="${st.hi}" style="width:62px">%
-          <select data-preset><option value="">Zone …</option>${opts}</select><span class="pv"></span><button class="icon-x" data-delstep>×</button></div>`).join('')}
+          <select data-s="mode">${modes.map(([k, l]) => `<option value="${k}" ${k === (st.mode || 'pct') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          ${tgt(st)}<label class="row small t2" title="Rampe von–bis"><input type="checkbox" data-s="ramp" ${st.ramp ? 'checked' : ''}>Verlauf</label>
+          <span class="pv"></span><button class="icon-x" data-delstep>×</button></div>`).join('')}
         <div><button class="btn sm" data-addstep>+ Schritt</button></div></div>`).join('')}
-      <div><button class="btn sm" data-k="addBlock">+ Block</button></div>`;
+      <div class="row"><select data-k="tpl">${BLOCK_TPL.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select><button class="btn sm" data-k="addBlock">+ Block</button></div>`;
   }
   box.innerHTML = `<div class="${o.plain ? 'stack' : 'card stack'}"><input data-k="name" value="${esc(w.name)}" style="font-size:16px;font-weight:600">
     <textarea data-k="desc" rows="2" placeholder="Hinweise für den Athleten">${esc(w.desc)}</textarea>${body}
@@ -673,21 +762,33 @@ function mountEditor(box, w, o = {}) {
       $('[data-f=label]', bel).oninput = e => { b.label = e.target.value.replace(/\s*\d+x$/, ''); changed(); preview(); };
       $('[data-f=reps]', bel).oninput = e => { b.reps = Math.max(1, parseInt(e.target.value) || 1); changed(); preview(); };
       $('[data-delblock]', bel).onclick = () => { w.blocks.splice(bi, 1); changed(); redraw(); };
-      $('[data-addstep]', bel).onclick = () => { const last = b.steps[b.steps.length - 1] || { dur: 5, unit: Object.keys(sp.units)[0], lo: 75, hi: 85 }; b.steps.push(Object.assign({}, last, { note: '' })); changed(); redraw(); };
+      $('[data-dupblock]', bel).onclick = () => { w.blocks.splice(bi + 1, 0, JSON.parse(JSON.stringify(b))); changed(); redraw(); };
+      $('[data-upblock]', bel).onclick = () => { if (!bi) return; [w.blocks[bi - 1], w.blocks[bi]] = [w.blocks[bi], w.blocks[bi - 1]]; changed(); redraw(); };
+      $('[data-addstep]', bel).onclick = () => { const last = b.steps[b.steps.length - 1] || blockTemplate(w.sport, 'blank').steps[0]; b.steps.push(Object.assign({}, last, { note: '' })); changed(); redraw(); };
       $$('.step', bel).forEach(sel => { const si = +sel.dataset.si, st = b.steps[si];
-        $$('[data-s]', sel).forEach(inp => inp.oninput = inp.onchange = () => { const k = inp.dataset.s; st[k] = k === 'unit' ? inp.value : (parseFloat(inp.value) || 0); changed(); preview(); });
-        $('[data-preset]', sel).onchange = e => { if (!e.target.value) return; [st.lo, st.hi] = e.target.value.split('-').map(Number); changed(); redraw(); };
+        $$('[data-s]', sel).forEach(inp => inp.oninput = inp.onchange = ev => {
+          const k = inp.dataset.s;
+          if (k === 'unit') st.unit = inp.value;
+          else if (k === 'ramp') st.ramp = inp.checked;
+          else if (k === 'pSlow' || k === 'pFast') { const v = secOf(inp.value); if (!isNaN(v) && v > 0) st[k] = v; else return; }
+          else if (k === 'z1' || k === 'z2') st[k] = +inp.value;
+          else if (k === 'mode') { if (ev.type !== 'change') return; switchMode(st, inp.value); changed(); return redraw(); }
+          else st[k] = parseFloat(inp.value) || 0;
+          changed(); preview(); });
         $('[data-delstep]', sel).onclick = () => { b.steps.splice(si, 1); changed(); redraw(); }; }); });
-    K('addBlock').onclick = () => { w.blocks.push({ label: '', reps: 1, steps: [{ dur: 10, unit: Object.keys(sp.units)[0], lo: 75, hi: 85, note: '' }] }); changed(); redraw(); };
+    K('addBlock').onclick = () => { w.blocks.push(blockTemplate(w.sport, K('tpl').value)); changed(); redraw(); };
   }
   o.bind && o.bind(box);
   preview();
   async function preview() {
     const aid = o.athleteId || cur()?.id, a = S.athletes.find(x => x.id === aid);
     const set = aid ? await sportSettings(aid).catch(() => null) : null; const thr = thrFor(set, w.sport);
-    if (!sp.strength) $$('.step[data-si]', box).forEach(sel => { const b = w.blocks[+sel.closest('.block').dataset.bi], st = b && b.steps[+sel.dataset.si]; if (st) $('.pv', sel).textContent = stepTargetText(w.sport, st, thr); });
+    if (!sp.strength) { const pr = pctPresets(w.sport, set);
+      $$('.step[data-si]', box).forEach(sel => { const b = w.blocks[+sel.closest('.block').dataset.bi], st = b && b.steps[+sel.dataset.si]; if (!st) return; $('.pv', sel).textContent = stepTargetText(w.sport, st, set);
+        const ps = $('[data-preset]', sel); if (ps && ps.options.length < 2) { ps.innerHTML = '<option value="">Vorlage …</option>' + pr.map(([n, lo, hi]) => lo == null ? `<option disabled>${n}</option>` : `<option value="${lo}-${hi}">${n} ${lo}–${hi}%</option>`).join('');
+          ps.onchange = e => { if (!e.target.value) return; [st.lo, st.hi] = e.target.value.split('-').map(Number); changed(); redraw(); }; } }); }
     let h = `<pre>${esc(workoutText(w))}</pre>`;
-    if (!sp.strength) { const fl = flatten(w, thr), t = totals(w, thr), max = Math.max(1.2, ...fl.map(x => x.f));
+    if (!sp.strength) { const fl = flatten(w, set), t = totals(w, set), max = Math.max(1.2, ...fl.map(x => x.f));
       h = `<div class="profile">${fl.map(x => `<div style="flex:${Math.max(x.sec, 1)};height:${Math.max(6, x.f / max * 100)}%;background:${sp.color};opacity:${0.35 + 0.65 * Math.min(1, x.f / max)}"></div>`).join('')}</div>
         <div class="small t2" style="margin-bottom:8px">${a && thr ? `Für ${esc(a.name)}: ` : ''}${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}${t.tss ? ' · TSS ≈ ' + Math.round(t.tss) : ''}${!thr && w.sport !== 'Ride' ? ' · Schwelle fehlt' : ''}</div>` + h; }
     const p = K('prev'); if (p) p.innerHTML = h;
@@ -716,7 +817,7 @@ async function openEvent(aid, e) {
     $('#evVis').onchange = () => { dirty = true; $('#evSave').textContent = 'Speichern •'; };
     $('#evClose').onclick = () => { if (dirty && !confirm('Änderungen verwerfen?')) return; closeDialog(); };
     $('#evSave').onclick = async () => {
-      const set = await sportSettings(aid).catch(() => null), t = totals(w, thrFor(set, w.sport));
+      const set = await sportSettings(aid).catch(() => null), t = totals(w, set);
       const body = { name: w.name, description: workoutDescription(w), type: w.sport, start_date_local: $('#evDate').value + 'T00:00:00', hide_from_athlete: !$('#evVis').checked };
       if (t.sec) body.moving_time = Math.round(t.sec);
       try { await iv('PUT', `athlete/${aid}/events/${e.id}`, body); closeDialog(); status('Workout gespeichert'); if (S.view === 'cal') renderCal(); else render(); } catch (err) { alert(err.message); }
