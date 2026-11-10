@@ -418,7 +418,7 @@ function predictTSS(w, set, pm) {
 }
 function stepTargetText(sport, st, set) {
   const m = st.mode || 'pct', thr = thrFor(set, sport), per = perOf(sport), unit = sport === 'Swim' ? '/100m' : '/km', cfg = set && set[sport === 'Swim' ? 'Swim' : sport === 'Ride' ? 'Ride' : 'Run'];
-  if (m === 'abs') return thr ? `≈ ${Math.round(per / st.pFast / thr * 100)} % Schwelle` : '';
+  if (m === 'abs') { const [x, y] = st.ramp ? [st.pSlow, st.pFast] : [Math.min(st.pSlow, st.pFast), Math.max(st.pSlow, st.pFast)]; return `${mmss(x)}${x !== y ? '–' + mmss(y) : ''}${unit}`; }
   if (m === 'zone') { const z = cfg?.pace_zones; if (!z || !thr) return ''; const [a, b] = zoneBounds(z, st.z1, st.z2); return `${fmtPace(thr * b / 100, per)}–${fmtPace(thr * a / 100, per)}${unit}`; }
   if (m === 'lthr') return cfg?.lthr ? `${Math.round(cfg.lthr * st.lo / 100)}–${Math.round(cfg.lthr * st.hi / 100)} bpm` : '';
   if (m === 'hrz') { const z = cfg?.hr_zones; if (!z) return ''; return `${st.z1 > 1 ? z[st.z1 - 2] + 1 : 0}–${z[(st.z2 || st.z1) - 1]} bpm`; }
