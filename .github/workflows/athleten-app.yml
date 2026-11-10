@@ -1,0 +1,28 @@
+name: Athleten-App bauen
+
+# Baut athlete.html neu, sobald sich die Coach-App oder die Athleten-Vorlage ändert.
+on:
+  push:
+    branches: [main]
+    paths: [index.html, tools/athlete.src.html, tools/build-athlete.js]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: cd tools && npm install --no-audit --no-fund && cd .. && node tools/build-athlete.js
+      - name: Änderung committen
+        run: |
+          if ! git diff --quiet athlete.html; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add athlete.html && git commit -m "athlete.html automatisch neu gebaut" && git push
+          fi
