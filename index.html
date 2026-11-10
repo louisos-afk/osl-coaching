@@ -2,8 +2,16 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0b0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OSL-Coaching">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <title>OSL-Coaching</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -48,6 +56,7 @@ input[type=date]{color-scheme:dark}
 label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2)}
 /* Layout */
 main{padding:24px 32px 48px;min-width:0}
+@supports (padding:env(safe-area-inset-top)){body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}}
 header.top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:22px}
 header.top h1{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:700}
 header.top .sub{color:var(--muted);font-size:13px}
@@ -109,6 +118,11 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .ev .m{color:var(--text2)}
 .ev.plan{border-style:dashed;background:transparent}
 .ev.race{border:1px solid var(--accent);background:var(--accent-soft)}
+.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.team-card:hover{border-color:var(--line2)}
+.day.drop{border-color:var(--accent);background:var(--accent-soft)}
+[data-drag]{cursor:grab}
+.wk .btn{padding:3px 7px;font-size:11px}
 .prio{flex:none;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:700}
 .day .addr{opacity:0;border:0;background:var(--card2);width:22px;height:22px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1}
 .day:hover .addr{opacity:1}
@@ -186,6 +200,7 @@ ol.steps b{color:var(--text)}
 <body>
 <aside>
   <div class="brand"><i>◆</i>OSL-Coaching</div>
+  <button class="btn ghost" id="btnTeam" style="justify-content:flex-start;margin-bottom:4px">👥 Team-Übersicht</button>
   <div class="side-h">Athleten</div>
   <div id="athletes"></div>
   <button class="btn" id="btnAddAth" style="justify-content:center;margin-top:6px">+ Athlet hinzufügen</button>
@@ -467,7 +482,7 @@ async function init() {
   try {
     S.me = await iv('GET', 'athlete/0');
     $('#coachName').textContent = 'Coach: ' + (S.me.name || S.me.id);
-    await loadAthletes(); await loadLib();
+    await loadAthletes(); await loadLib(); await loadStore().catch(() => { S.store = { settings: {}, plans: [] }; });
   } catch (e) { status(e.message, true); $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
   status('');
   if (!S.athletes.some(a => a.id === S.cur)) S.cur = S.athletes[0]?.id || null;
@@ -556,6 +571,7 @@ function renderAthletes() {
 const cur = () => S.athletes.find(a => a.id === S.cur);
 $('#btnRefresh').onclick = async () => { status('<span class="spin"></span> Lade Athleten …'); try { await loadAthletes(); if (!cur()) S.cur = S.athletes[0]?.id; renderAthletes(); render(); status(S.athletes.length + ' Athleten'); } catch (e) { status(e.message, true); } };
 $('#btnKey').onclick = () => setTab('set');
+$('#btnTeam').onclick = () => setTab('team');
 $('#btnAddAth').onclick = () => {
   const coach = S.me?.name || 'deinem Namen';
   const msg = `Hi! Ich coache dich ab jetzt über OSL-Coaching (intervals.icu). So verbindest du dich:\n1. Auf https://intervals.icu kostenlos registrieren.\n2. Einstellungen → Verbindungen → Garmin Connect verbinden und „Geplante Trainingseinheiten hochladen“ aktivieren.\n3. Auf https://intervals.icu/athletes „Add a coach“ wählen und nach „${coach}“ suchen.\nIch nehme die Anfrage dann an.`;
@@ -599,11 +615,12 @@ $$('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.v));
 function setTab(v, silent) { S.view = v; LS.set('view', v); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); if (!silent) render(); }
 function render() {
   const a = cur();
-  $('#title').textContent = S.view === 'lib' ? 'Workout-Bibliothek' : S.view === 'set' ? 'Einstellungen' : a ? a.name : 'OSL-Coaching';
-  $('#subtitle').textContent = S.view === 'set' ? 'Verbindung, Konten und Notizen' : S.view === 'lib' ? 'Gespeichert in deinem intervals.icu-Account, auf allen Geräten gleich' : a ? a.id : '';
+  $('#title').textContent = S.view === 'team' ? 'Team-Übersicht' : S.view === 'lib' ? 'Workout-Bibliothek' : S.view === 'set' ? 'Einstellungen' : a ? a.name : 'OSL-Coaching';
+  $('#subtitle').textContent = S.view === 'team' ? `${S.athletes.length} Athleten` : S.view === 'set' ? 'Verbindung, Konten und Notizen' : S.view === 'lib' ? 'Gespeichert in deinem intervals.icu-Account, auf allen Geräten gleich' : a ? a.id : '';
   if (!S.me) return;
   if (S.view === 'lib') return renderLib();
   if (S.view === 'set') return renderSettings();
+  if (S.view === 'team') return renderTeam();
   if (!a) { $('#view').innerHTML = '<div class="card empty">Noch keine Athleten. Klick links auf „+ Athlet hinzufügen“.</div>'; return; }
   ({ home: renderHome, cal: renderCal, ana: renderAna, thr: renderThr }[S.view] || renderHome)();
 }
@@ -620,6 +637,8 @@ async function renderHome() {
     const [set, acts, well, evs] = await Promise.all([sportSettings(a.id), activities(a.id, from, to),
       iv('GET', `athlete/${a.id}/wellness?oldest=${ymd(addDays(today, -1))}&newest=${to}`), events(a.id, to, ymd(addDays(today, 7)))]);
     const race = ((await events(a.id, to, ymd(addDays(today, 365)))) || []).filter(isRace).sort((x, y) => x.start_date_local.localeCompare(y.start_date_local))[0];
+    const [recov, proj] = await Promise.all([recovery(a.id).catch(() => null), race ? formProjection(a.id).catch(() => null) : null]);
+    const rf = proj?.raceForm?.find(r => r.race.id === race?.id);
     await ensurePower(acts); if (stale(a.id)) return;
     const w = (well || []).filter(x => x.ctl != null).pop() || {};
     const wk = acts.filter(x => parseYmd(x.start_date_local) >= addDays(today, -6)).map(x => metrics(x, set));
@@ -631,8 +650,9 @@ async function renderHome() {
       ['TSS 7 Tage · HR', n0(sum('hTSS')), '', `LTHR ${set.Run?.lthr || '–'} bpm`],
       ['Umfang 7 Tage', km(sum('dist')), 'km', fmtH(sum('sec'))],
       ['Schwellenpace', fmtPace(thr), '/km', thr ? `VDOT ≈ ${(vo2(thr * 60) / 0.88).toFixed(1)}` : ''],
-      race ? ['Nächster Wettkampf', Math.round((parseYmd(race.start_date_local) - parseYmd(to)) / 864e5), 'Tage', `<span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} · ${dShort(parseYmd(race.start_date_local))}`]
+      race ? ['Nächster Wettkampf', Math.round((parseYmd(race.start_date_local) - parseYmd(to)) / 864e5), 'Tage', `<span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} · ${dShort(parseYmd(race.start_date_local))}${rf ? ` · Form ${formTxt(rf.tsb)}` : ''}`]
         : ['Nächster Wettkampf', '–', '', '<span class="muted">Im Kalender mit 🏁 eintragen</span>'],
+      ...(recov ? [['Erholung', `<span class="dot" style="width:14px;height:14px;background:${AMPEL[recov.level]}"></span>`, ` ${AMPEL_TXT[recov.level]}`, esc(recov.reasons.join(' · '))]] : []),
     ].map(([l, v, u, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}<small>${u}</small></div><div class="d">${d}</div></div>`).join('');
     const rec = [...acts].sort((x, y) => y.start_date_local.localeCompare(x.start_date_local)).slice(0, 8);
     $('#recent').innerHTML = rec.length ? actTable(rec, set) : '<div class="muted">Keine Einheiten in den letzten 4 Wochen.</div>';
@@ -645,10 +665,10 @@ async function renderHome() {
   } catch (e) { status(e.message, true); }
 }
 function actTable(list, set) {
-  return `<table><tr><th>Datum</th><th>Einheit</th><th class="num">km</th><th class="num">Zeit</th><th class="num">Pace</th><th class="num">HF</th><th class="num">W</th><th class="num">TSS W</th><th class="num">TSS HR</th><th class="num">m/Schlag</th></tr>
+  return `<table><tr><th>Datum</th><th>Einheit</th><th class="num">km</th><th class="num">Zeit</th><th class="num">Pace</th><th class="num">HF</th><th class="num">W</th><th class="num">TSS W</th><th class="num">TSS HR</th><th class="num">m/Schlag</th><th>Feedback</th></tr>
     ${list.map(x => { const m = metrics(x, set); return `<tr class="click" data-act="${esc(x.id)}"><td>${dShort(parseYmd(x.start_date_local))}</td><td><span class="dot" style="background:${SPORTS[m.sport].color}"></span> ${esc(x.name || x.type)}</td>
       <td class="num">${m.dist ? km(m.dist) : '–'}</td><td class="num">${fmtH(m.sec)}</td><td class="num">${m.sport === 'Run' ? fmtPace(m.speed) : '–'}</td><td class="num">${n0(m.hr)}</td>
-      <td class="num">${n0(m.np)}</td><td class="num">${n0(m.pTSS)}</td><td class="num">${n0(m.hTSS)}</td><td class="num">${m.efPace ? n2(m.efPace) : '–'}</td></tr>`; }).join('')}</table>`;
+      <td class="num">${n0(m.np)}</td><td class="num">${n0(m.pTSS)}</td><td class="num">${n0(m.hTSS)}</td><td class="num">${m.efPace ? n2(m.efPace) : '–'}</td><td>${feedbackPills(x)}</td></tr>`; }).join('')}</table>`;
 }
 
 // =============== Kalender ===============
@@ -662,11 +682,12 @@ async function renderCal() {
         <button data-j="-365" title="1 Jahr zurück">−1 J</button><button data-j="-28" title="4 Wochen zurück">−4 W</button><button data-j="-7" title="1 Woche zurück">‹</button>
         <button data-j="0">Heute</button>
         <button data-j="7" title="1 Woche vor">›</button><button data-j="28" title="4 Wochen vor">+4 W</button><button data-j="365" title="1 Jahr vor">+1 J</button></div>
-      <input type="date" id="calJump" title="Springe zu Datum" value="${ymd(start)}">
+      <input type="date" id="calJump" title="Springe zu Datum" value="${ymd(start)}"><button class="btn" id="calPlan">📋 Plan-Vorlage</button>
       <span class="range-label">${dLong(start)} – ${dLong(end)}</span></div>
     <div class="cal ${weeks === 1 ? 'tall' : ''}" id="cal"><div class="card empty" style="grid-column:1/-1"><span class="spin"></span></div></div>`;
   $$('#calWeeks button').forEach(b => b.onclick = () => { S.cal.weeks = +b.dataset.n; LS.set('calWeeks', S.cal.weeks); renderCal(); });
   $$('[data-j]').forEach(b => b.onclick = () => { const j = +b.dataset.j; S.cal.start = j === 0 ? null : addDays(S.cal.start, j); renderCal(); });
+  $('#calPlan').onclick = () => applyPlanDialog(a.id);
   $('#calJump').onchange = e => { if (e.target.value) { S.cal.start = monday(parseYmd(e.target.value)); renderCal(); } };
   let evs, acts, set;
   try { [evs, acts, set] = await Promise.all([events(a.id, ymd(start), ymd(end)), activities(a.id, ymd(start), ymd(end)), sportSettings(a.id)]);
@@ -677,38 +698,45 @@ async function renderCal() {
   (evs || []).forEach(e => put(e.start_date_local.slice(0, 10), { ev: e }));
   (acts || []).forEach(x => put(x.start_date_local.slice(0, 10), { act: x }));
   const paired = new Set((acts || []).map(x => x.paired_event_id).filter(Boolean));
+  const match = matchPlan(evs, acts), actPlan = {}; Object.entries(match).forEach(([eid, x]) => actPlan[x.id] = S.evIndex[eid]);
   let h = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So', 'Woche'].map(x => `<div class="hd">${x}</div>`).join('');
   for (let w = 0; w < weeks; w++) {
     const T = { pSec: 0, pTss: 0, sec: 0, m: 0, pT: 0, hT: 0 };
     for (let i = 0; i < 7; i++) {
       const d = addDays(start, w * 7 + i), k = ymd(d), items = by[k] || [];
-      h += `<div class="day ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${items.length ? '' : 'empty-day'}"><div class="dh"><b>${d.getDate()}.${d.getMonth() + 1}.</b><span class="row" style="gap:4px">${(weeks > 1 && d.getDate() === 1) || (w === 0 && i === 0) ? MON[d.getMonth()] : ''}<button class="addr" data-r="${k}" title="Wettkampf eintragen">🏁</button><button class="add" data-d="${k}" title="Workout planen">+</button></span></div>`;
+      h += `<div data-day="${k}" class="day ${k < today ? 'past' : ''} ${k === today ? 'today' : ''} ${items.length ? '' : 'empty-day'}"><div class="dh"><b>${d.getDate()}.${d.getMonth() + 1}.</b><span class="row" style="gap:4px">${(weeks > 1 && d.getDate() === 1) || (w === 0 && i === 0) ? MON[d.getMonth()] : ''}<button class="addr" data-r="${k}" title="Wettkampf eintragen">🏁</button><button class="add" data-d="${k}" title="Workout planen">+</button></span></div>`;
       for (const it of items) {
         if (it.ev && isRace(it.ev)) {
           const e = it.ev, r = raceInfo(e);
-          h += `<div class="ev race click" data-ev="${e.id}" title="Wettkampf"><div class="t"><span class="prio">${r.prio}</span>🏁 ${esc(e.name || 'Wettkampf')}</div>
+          h += `<div class="ev race click" data-ev="${e.id}" data-drag="${e.id}" title="Wettkampf"><div class="t"><span class="prio">${r.prio}</span>🏁 ${esc(e.name || 'Wettkampf')}</div>
             <div class="m">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', r.goal && e.distance && sportOf(e.type) === 'Run' ? fmtPace(e.distance / r.goal) + '/km' : ''].filter(Boolean).join(' · ')}</div></div>`;
         } else if (it.ev) {
           const e = it.ev, sp = sportOf(e.type); T.pSec += e.moving_time || 0; T.pTss += e.icu_training_load || 0;
-          h += `<div class="ev plan click ${paired.has(e.id) ? 'done' : ''}" data-ev="${e.id}" title="Details / bearbeiten">${e.category === 'WORKOUT' ? `<button class="x" data-del="${e.id}" title="Löschen">×</button>` : ''}
+          const mt = match[e.id], dk = e.start_date_local.slice(0, 10);
+          const st = e.category !== 'WORKOUT' ? '' : mt ? compPill(compliance(e, mt)) : dk < today ? '<span class="pill" style="color:var(--warn)"><span class="dot" style="background:var(--warn)"></span>verpasst</span>' : '';
+          h += `<div class="ev plan click ${mt || paired.has(e.id) ? 'done' : ''}" data-ev="${e.id}" data-drag="${e.id}" title="Details / bearbeiten · ziehen zum Verschieben">${e.category === 'WORKOUT' ? `<button class="x" data-del="${e.id}" title="Löschen">×</button>` : ''}
             <div class="t"><span class="dot" style="background:${SPORTS[sp].color}"></span>${esc(e.name || e.category)}</div>${e.hide_from_athlete ? '<span class="pill" style="margin:3px 0">🔒 versteckt</span>' : ''}
-            <div class="m">${[e.moving_time ? fmtH(e.moving_time) : '', e.distance ? km(e.distance) + ' km' : ''].filter(Boolean).join(' · ')}</div>${planPills(e, sp, set, pm)}</div>`;
+            <div class="m">${[e.moving_time ? fmtH(e.moving_time) : '', e.distance ? km(e.distance) + ' km' : ''].filter(Boolean).join(' · ')}</div>${planPills(e, sp, set, pm)}${st ? `<div class="tss">${st}</div>` : ''}</div>`;
         } else {
           const x = it.act, m = metrics(x, set); T.sec += m.sec; T.m += m.dist; T.pT += m.pTSS || 0; T.hT += m.hTSS || 0;
           h += `<div class="ev click" data-act="${esc(x.id)}" title="Details"><div class="t"><span class="dot" style="background:${SPORTS[m.sport].color}"></span>${esc(x.name || x.type)}</div>
             <div class="m">${[m.dist ? km(m.dist) + ' km' : '', fmtH(m.sec), m.sport === 'Run' && m.speed ? fmtPace(m.speed) + '/km' : ''].filter(Boolean).join(' · ')}</div>
-            <div class="tss"><span class="pill"><span class="dot" style="background:var(--s1)"></span>W ${n0(m.pTSS)}</span><span class="pill"><span class="dot" style="background:var(--s2)"></span>HR ${n0(m.hTSS)}</span></div></div>`;
+            <div class="tss"><span class="pill"><span class="dot" style="background:var(--s1)"></span>W ${n0(m.pTSS)}</span><span class="pill"><span class="dot" style="background:var(--s2)"></span>HR ${n0(m.hTSS)}</span>${actPlan[x.id] ? compPill(compliance(actPlan[x.id], x)) : ''}${feedbackPills(x)}</div></div>`;
         }
       }
       h += '</div>';
     }
     const wStart = addDays(start, w * 7), rel = addDays(wStart, -8);
     h += `<div class="wk">${wStart > horizon() ? `<div class="r" style="color:var(--accent)"><span style="color:inherit">🔒 sichtbar ab</span><b>So ${rel.getDate()}.${rel.getMonth() + 1}.</b></div>` : ''}<div class="r"><span>Geplant</span><b>${fmtH(T.pSec)}${T.pTss ? ' · ' + T.pTss : ''}</b></div><div class="r"><span>Absolviert</span><b>${fmtH(T.sec)}</b></div>
-      <div class="r"><span>Distanz</span><b>${km(T.m)} km</b></div><div class="r"><span>TSS Watt</span><b>${n0(T.pT)}</b></div><div class="r"><span>TSS HR</span><b>${n0(T.hT)}</b></div></div>`;
+      <div class="r"><span>Distanz</span><b>${km(T.m)} km</b></div><div class="r"><span>TSS Watt</span><b>${n0(T.pT)}</b></div><div class="r"><span>TSS HR</span><b>${n0(T.hT)}</b></div>
+      <div class="row" style="gap:4px;margin-top:2px"><button class="btn" data-copyw="${ymd(wStart)}" title="Woche kopieren">⧉ Kopieren</button><button class="btn" data-tplw="${ymd(wStart)}" title="Als Plan-Vorlage speichern">💾 Vorlage</button></div></div>`;
   }
   $('#cal').innerHTML = h;
   $$('.day .add').forEach(b => b.onclick = () => planDialog(b.dataset.d));
   $$('.day .addr').forEach(b => b.onclick = () => raceDialog(a.id, b.dataset.r));
+  bindDnD(a.id);
+  $$('[data-copyw]').forEach(b => b.onclick = () => copyWeekDialog(a.id, b.dataset.copyw));
+  $$('[data-tplw]').forEach(b => b.onclick = () => saveTemplateDialog(a.id, b.dataset.tplw));
   $$('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm('Geplantes Workout löschen? Es verschwindet auch von der Uhr.')) return;
     try { await iv('DELETE', `athlete/${a.id}/events/${b.dataset.del}`); renderCal(); } catch (e) { status(e.message, true); }
@@ -960,7 +988,11 @@ async function openActivity(aid, act) {
       <div class="row"><a class="btn sm" href="https://intervals.icu/activities/${esc(act.id)}" target="_blank" rel="noopener">In intervals.icu ↗</a><button class="btn sm" onclick="closeDialog()">Schließen</button></div></div>
     <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:16px 0">${kp.map(([l, v]) => `<div class="kpi" style="padding:10px 12px"><div class="l">${l}</div><div class="v" style="font-size:18px">${v}</div></div>`).join('')}</div>
     <div class="stack" id="actCharts"><div class="muted small"><span class="spin"></span> Lade Verlauf …</div></div>
-    <div class="card" style="margin-top:14px"><h3>Intervalle / Runden</h3><div class="tbl-wrap" id="actInt"><span class="spin"></span></div></div>`);
+    <div class="card" style="margin-top:14px" id="actPlanBox" hidden><h3>Plan gegen Ist</h3><div class="tbl-wrap" id="actPlan"></div></div>
+    <div class="card" style="margin-top:14px"><h3>Intervalle / Runden</h3><div class="tbl-wrap" id="actInt"><span class="spin"></span></div></div>
+    <div class="card" style="margin-top:14px"><h3>Feedback des Athleten</h3><div class="row" style="gap:6px;margin-bottom:8px">${feedbackPills(act) || '<span class="small muted">Kein RPE / Gefühl eingetragen.</span>'}</div>
+      ${act.description ? `<div style="white-space:pre-wrap;margin-bottom:8px">${esc(act.description)}</div>` : ''}<div id="actMsg"><span class="spin"></span></div></div>`);
+  loadMessages(act);
   try {
     const [st, ints] = await Promise.all([iv('GET', `activity/${act.id}/streams?types=time,watts,heartrate,velocity_smooth,altitude`), iv('GET', `activity/${act.id}/intervals`).catch(() => null)]);
     const g = k => (st || []).find(x => x.type === k)?.data, time = g('time');
@@ -975,6 +1007,13 @@ async function openActivity(aid, act) {
     $('#actInt').innerHTML = Array.isArray(list) && list.length ? `<table><tr><th>#</th><th>Typ</th><th class="num">Zeit</th><th class="num">Distanz</th><th class="num">Pace</th><th class="num">Ø W</th><th class="num">Ø HF</th></tr>
       ${list.map((x, i) => { const sp2 = x.distance && x.moving_time ? x.distance / x.moving_time : x.average_speed; return `<tr><td>${i + 1}</td><td>${esc(x.label || x.type || '')}</td><td class="num">${fmtDur(x.moving_time || x.elapsed_time || 0)}</td><td class="num">${x.distance ? km(x.distance) + ' km' : '–'}</td>
         <td class="num">${m.sport === 'Run' ? fmtPace(sp2) : '–'}</td><td class="num">${n0(x.average_watts)}</td><td class="num">${n0(x.average_heartrate)}</td></tr>`; }).join('')}</table>` : '<div class="muted small">Keine Intervalle erkannt.</div>';
+    // Plan gegen Ist
+    let pe = act.paired_event_id ? (S.evIndex[act.paired_event_id] || await iv('GET', `athlete/${aid}/events/${act.paired_event_id}`).catch(() => null)) : null;
+    if (!pe) pe = Object.values(S.evIndex).find(e => e.category === 'WORKOUT' && e.athlete_id === aid && e.start_date_local.slice(0, 10) === act.start_date_local.slice(0, 10) && sportOf(e.type) === m.sport);
+    if (pe) { const pw = Object.assign({ sport: sportOf(pe.type) }, parseWorkout(sportOf(pe.type), pe.description));
+      $('#actPlanBox').hidden = false;
+      $('#actPlan').innerHTML = `<div class="row" style="gap:8px;margin-bottom:8px"><b>${esc(pe.name)}</b>${compPill(compliance(pe, act))}<span class="small muted">geplant ${pe.moving_time ? fmtH(pe.moving_time) : '–'} · absolviert ${fmtH(act.moving_time)}</span></div>`
+        + (pw.blocks.length ? planVsActualHtml(pw, set, Array.isArray(list) ? list : [], pw.sport, { distance: act.distance, moving_time: act.moving_time, average_heartrate: act.average_heartrate, average_watts: m.avgW }) : ''); }
   } catch (err) { $('#actCharts').innerHTML = `<div class="err small">${esc(err.message)}</div>`; }
 }
 // Klicks auf Einheiten und Workouts (Kalender, Tabellen, Übersicht)
@@ -1038,9 +1077,15 @@ async function renderAna() {
       <div class="kpi"><div class="l">Ø Watt pro Schlag</div><div class="v">${n2(avg(runs, 'efW'))}</div><div class="d">${trend('efW')}</div></div>
       <div class="kpi"><div class="l">Ø Meter pro Schlag</div><div class="v">${n2(avg(runs, 'efPace'))}</div><div class="d">${trend('efPace')}</div></div></div>
     ${!set.Run?.ftp ? `<div class="card" style="margin-bottom:16px;border-color:var(--s2)">Für TSS aus Watt fehlt die Lauf-CP (FTP). <button class="btn sm" id="toThr">Unter Schwellen eintragen</button></div>` : ''}
+    <div class="card" style="margin-bottom:16px"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">Formprognose mit geplanten Workouts</h3><span class="small muted" id="projInfo"></span></div><div id="ch-proj"><span class="spin"></span></div></div>
     <div class="g2">${['load', 'fit', 'efW', 'efP'].map(k => `<div class="card">${cardHead(k)}<div id="ch-${k}"></div></div>`).join('')}</div>
     <div class="card" style="margin-top:16px">${cardHead('tbl')}<div class="tbl-wrap tall" id="ch-tbl"></div></div>`;
   if ($('#toThr')) $('#toThr').onclick = () => setTab('thr');
+  formProjection(a.id).then(pr => { if (stale(a.id) || !$('#ch-proj')) return;
+    if (!pr) { $('#ch-proj').innerHTML = '<div class="muted small">Keine Fitnessdaten.</div>'; return; }
+    chart($('#ch-proj'), [{ name: 'Fitness (CTL)', color: 'var(--s1)', pts: pr.pts.map(p => ({ x: p.x, y: p.ctl })) }, { name: 'Ermüdung (ATL)', color: 'var(--s2)', pts: pr.pts.map(p => ({ x: p.x, y: p.atl })) },
+      { name: 'Form (TSB)', color: 'var(--s3)', pts: pr.pts.map(p => ({ x: p.x, y: p.tsb, label: pr.races.find(r => r.start_date_local.slice(0, 10) === ymd(p.x)) ? '🏁 Form' : null })) }], { yfmt: n0, w: 1100, h: 200 });
+    $('#projInfo').innerHTML = pr.raceForm.length ? pr.raceForm.slice(0, 3).map(r => `🏁 ${esc(r.race.name)}: Form ${formTxt(r.tsb)}, Fitness ${n0(r.ctl)}`).join(' · ') + ' <span class="muted">(Form +5 bis +25 gilt als frisch)</span>' : 'Kein Wettkampf eingetragen, Prognose 6 Wochen'; });
   $$('.cr').forEach(s => s.onchange = () => { const k = s.dataset.k, v = s.value;
     if (!v) setCardRange(k, null); else if (v === 'custom') { const [f, t] = cardDates(k); setCardRange(k, { from: f, to: t }); } else setCardRange(k, { preset: v }); renderAna(); });
   $$('.crf,.crt').forEach(inp => inp.onchange = () => { const k = inp.dataset.k, f = $(`.crf[data-k="${k}"]`).value, t = $(`.crt[data-k="${k}"]`).value; if (f && t && f <= t) { setCardRange(k, { from: f, to: t }); renderAna(); } });
@@ -1117,11 +1162,31 @@ async function renderThr() {
       <button class="btn pri" style="align-self:flex-start" data-save="Swim" ${Sw.id ? '' : 'disabled'}>Speichern</button>
       ${Sw.id ? '' : '<div class="small muted">Keine Schwimm-Einstellungen im Account. In intervals.icu unter Einstellungen → Sport-Einstellungen anlegen.</div>'}</div></div>
     <div class="g2" style="margin-top:16px">
+      <div class="card stack"><h3>Vorschläge aus den letzten 90 Tagen</h3><div id="sugBox"><span class="spin"></span></div></div>
+      <div class="card stack"><h3>Erholungs-Ampel</h3>
+        <label class="row"><input type="checkbox" id="sleepW" ${athSet(a.id, 'sleepWatch', false) ? 'checked' : ''}> ${esc(a.name)} trägt die Uhr auch nachts</label>
+        <div class="small muted">Nur dann sind Ruhepuls, HRV und Schlaf verlässlich. Die Ampel vergleicht den letzten Tag mit dem Schnitt der 4 Wochen davor: Ruhepuls +3/+5, HRV −8/−15 %, Schlaf unter 6,5/5 h. Einstellung gilt auf allen Geräten.</div>
+        <div id="recBox" class="small t2"></div></div>
+    </div>
+    <div class="g2" style="margin-top:16px">
       <div class="card stack"><h3>VDOT aus Wettkampf</h3>
         <div class="row"><select id="vDist">${DISTS.map(([d, n]) => `<option value="${d}" ${race && race.d == d ? 'selected' : ''}>${n}</option>`).join('')}</select>
           <input id="vTime" placeholder="h:mm:ss" value="${race ? fmtDur(race.t) : ''}" style="width:110px"><button class="btn" id="vCalc">Berechnen</button></div>
         <div id="vOut" class="t2 small">Wettkampfzeit eintragen. Die T-Pace kannst du als Schwellenpace übernehmen.</div></div>
       <div class="card" id="vTab"><h3>Prognosen und Trainingspaces</h3><div class="muted small">Erscheinen nach der Berechnung.</div></div></div>`;
+  const showRec = async () => { const r = await recovery(a.id).catch(() => null); if ($('#recBox')) $('#recBox').innerHTML = r ? `${ampelHtml(r)} ${esc(r.reasons.join(' · '))}${r.date ? ` <span class="muted">(${dShort(parseYmd(r.date))})</span>` : ''}` : 'Ampel aus.'; };
+  showRec();
+  $('#sleepW').onchange = async e => { try { await setAthSet(a.id, 'sleepWatch', e.target.checked); status('Gespeichert'); showRec(); } catch (err) { status(err.message, true); } };
+  thresholdSuggest(a.id).then(sg => { if (stale(a.id) || !$('#sugBox')) return;
+    const rows = [];
+    if (sg.cs) rows.push(['Schwellenpace', `${fmtPace(sg.cs)}/km`, 'Critical Speed aus der Pace-Kurve', () => { $('#rPace').value = fmtPace(sg.cs); }]);
+    if (sg.tFromVdot) rows.push(['Schwellenpace (VDOT)', `${fmtPace(sg.tFromVdot)}/km`, `VDOT ${sg.vdot.toFixed(1)} aus Bestzeiten ${sg.races.map(x => x.n + ' ' + fmtDur(x.t)).join(', ')}`, () => { $('#rPace').value = fmtPace(sg.tFromVdot); }]);
+    if (sg.cp) rows.push(['CP Laufen', `${sg.cp} W`, `eFTP von intervals.icu${sg.p20 ? ` · beste 20 min ${sg.p20} W` : ''}${sg.p60 ? ` · 60 min ${sg.p60} W` : ''}`, () => { $('#rFtp').value = sg.cp; }]);
+    if (sg.rideFtp) rows.push(['FTP Rad', `${sg.rideFtp} W`, 'eFTP von intervals.icu', () => { $('#bFtp').value = sg.rideFtp; }]);
+    $('#sugBox').innerHTML = rows.length ? `<table>${rows.map((r, i) => `<tr><td>${r[0]}</td><td class="num"><b>${r[1]}</b></td><td class="small muted" style="white-space:normal">${r[2]}</td><td><button class="btn sm" data-sug="${i}">Übernehmen</button></td></tr>`).join('')}</table>
+      <div class="small muted">„Übernehmen“ trägt den Wert oben ein, gespeichert wird erst mit „Speichern“. Ohne harte Einheiten in den letzten 90 Tagen fallen die Werte zu niedrig aus.</div>` : '<div class="small muted">Noch zu wenig Daten.</div>';
+    $$('[data-sug]').forEach(b => b.onclick = () => { rows[+b.dataset.sug][3](); status('Eingetragen, mit „Speichern“ bestätigen'); });
+  });
   const put = async (type, body) => { const s = set[type]; try { await iv('PUT', `athlete/${a.id}/sport-settings/${s.id}`, body); status('Gespeichert'); S.actCache = {}; await sportSettings(a.id, true); } catch (e) { status(e.message, true); } };
   $$('[data-save]').forEach(b => b.onclick = () => {
     const t = b.dataset.save, num = id => { const v = $(id).value.trim(); return v ? +v : null; };
@@ -1172,6 +1237,246 @@ function renderSettings() {
   $('#notesCopy').onclick = async () => { try { await navigator.clipboard.writeText($('#notes').value); $('#notesCopy').textContent = 'Kopiert ✓'; } catch {} };
 }
 
+// =============== Ablage im Coach-Account (geräteübergreifend) ===============
+// Ordner "OSL-Coaching Daten": "_settings" (JSON) und "Plan: <Name>" (Plan-Vorlagen als JSON).
+const DATA_FOLDER = 'OSL-Coaching Daten';
+const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
+async function loadStore() {
+  const folders = await iv('GET', 'athlete/0/folders');
+  let f = (folders || []).find(x => x.type === 'FOLDER' && x.name === DATA_FOLDER);
+  if (!f) f = await iv('POST', 'athlete/0/folders', { type: 'FOLDER', name: DATA_FOLDER });
+  const items = f.children || [], st = items.find(x => x.name === '_settings');
+  S.store = { folderId: f.id, settingsId: st?.id || null, settings: st ? parseJson(st.description) : {},
+    plans: items.filter(x => (x.name || '').startsWith('Plan: ')).map(x => ({ id: x.id, name: x.name.slice(6), data: parseJson(x.description) })).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+async function saveSettings() {
+  const body = { name: '_settings', type: 'Other', description: JSON.stringify(S.store.settings) };
+  if (S.store.settingsId) await iv('PUT', `athlete/0/workouts/${S.store.settingsId}`, body);
+  else S.store.settingsId = (await iv('POST', 'athlete/0/workouts', Object.assign({ folder_id: S.store.folderId }, body))).id;
+}
+const athSet = (aid, k, d) => ((S.store?.settings.ath || {})[aid] || {})[k] ?? d;
+async function setAthSet(aid, k, v) { const s = S.store.settings; s.ath = s.ath || {}; s.ath[aid] = s.ath[aid] || {}; s.ath[aid][k] = v; await saveSettings(); }
+
+// =============== Erholungs-Ampel (nur wenn der Athlet die Uhr nachts trägt) ===============
+const AMPEL = ['var(--muted)', 'var(--ok)', '#e2b33c', 'var(--warn)'], AMPEL_TXT = ['Keine Daten', 'Gut erholt', 'Achtung', 'Erholung prüfen'];
+async function recovery(aid) {
+  if (!athSet(aid, 'sleepWatch', false)) return null;
+  const w = (await iv('GET', `athlete/${aid}/wellness?oldest=${ymd(addDays(new Date(), -30))}&newest=${ymd(new Date())}`)) || [];
+  const last = [...w].reverse().find(x => x.restingHR || x.hrv || x.sleepSecs);
+  if (!last) return { level: 0, reasons: ['Keine Schlafdaten von der Uhr'] };
+  const base = w.filter(x => x.id < last.id);
+  const avg = k => { const v = base.map(x => x[k]).filter(x => x != null); return v.length >= 5 ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  let level = 1; const rs = [], bump = (l, t) => { level = Math.max(level, l); rs.push(t); };
+  const rhr = avg('restingHR'), hrv = avg('hrv');
+  if (last.restingHR && rhr) { const d = last.restingHR - rhr; if (d >= 5) bump(3, `Ruhepuls +${Math.round(d)}`); else if (d >= 3) bump(2, `Ruhepuls +${Math.round(d)}`); }
+  if (last.hrv && hrv) { const p = (last.hrv / hrv - 1) * 100; if (p <= -15) bump(3, `HRV ${Math.round(p)} %`); else if (p <= -8) bump(2, `HRV ${Math.round(p)} %`); }
+  if (last.sleepSecs) { const h = last.sleepSecs / 3600, t = `Schlaf ${h.toFixed(1).replace('.', ',')} h`; if (h < 5) bump(3, t); else if (h < 6.5) bump(2, t); }
+  if (last.sleepScore != null && last.sleepScore < 50) bump(2, `Schlafscore ${last.sleepScore}`);
+  return { level, reasons: rs.length ? rs : ['Alles im Normalbereich'], last, rhr, hrv, date: last.id };
+}
+const ampelHtml = r => r ? `<span class="row" style="gap:6px"><span class="dot" style="width:10px;height:10px;background:${AMPEL[r.level]}"></span>${AMPEL_TXT[r.level]}</span>` : '';
+
+// =============== Plan gegen Ist ===============
+// Ordnet absolvierte Einheiten geplanten Workouts zu: zuerst über intervals.icu (paired_event_id), sonst gleicher Tag und Sportart.
+function matchPlan(evs, acts) {
+  const map = {}, used = new Set();
+  for (const a of acts || []) if (a.paired_event_id) { map[a.paired_event_id] = a; used.add(a.id); }
+  for (const e of (evs || []).filter(e => e.category === 'WORKOUT' && !map[e.id])) {
+    const a = (acts || []).find(x => !used.has(x.id) && x.start_date_local.slice(0, 10) === e.start_date_local.slice(0, 10) && sportOf(x.type) === sportOf(e.type) && x.moving_time > 300);
+    if (a) { map[e.id] = a; used.add(a.id); }
+  }
+  return map;
+}
+function compliance(e, a) {
+  if (a.paired_event_id === e.id && a.compliance) return a.compliance;
+  const p = e.moving_time, r = a.moving_time; if (!p || !r) return null;
+  let c = Math.min(p / r, r / p) * 100;
+  if (e.icu_training_load && a.icu_training_load) c = (c + Math.min(e.icu_training_load / a.icu_training_load, a.icu_training_load / e.icu_training_load) * 100) / 2;
+  return c;
+}
+const compColor = c => c == null ? 'var(--muted)' : c >= 85 ? 'var(--ok)' : c >= 65 ? '#e2b33c' : 'var(--warn)';
+const compPill = c => `<span class="pill" title="Plan erfüllt"><span class="dot" style="background:${compColor(c)}"></span>${c == null ? '✓' : Math.round(c) + ' %'}</span>`;
+function stepRange(sport, st, set) {
+  const m = st.mode || 'pct', thr = thrFor(set, sport), per = perOf(sport), cfg = set && set[sport === 'Swim' ? 'Swim' : sport === 'Ride' ? 'Ride' : 'Run'];
+  if (m === 'pct') return thr ? { k: sport === 'Ride' ? 'power' : 'pace', lo: thr * st.lo / 100, hi: thr * st.hi / 100 } : null;
+  if (m === 'abs') return { k: 'pace', lo: per / st.pSlow, hi: per / st.pFast };
+  if (m === 'zone') { const z = cfg?.pace_zones; if (!z || !thr) return null; const [a, b] = zoneBounds(z, st.z1, st.z2); return { k: 'pace', lo: thr * a / 100, hi: thr * b / 100 }; }
+  if (m === 'lthr') return cfg?.lthr ? { k: 'hr', lo: cfg.lthr * st.lo / 100, hi: cfg.lthr * st.hi / 100 } : null;
+  if (m === 'hrz') { const z = cfg?.hr_zones; return z ? { k: 'hr', lo: st.z1 > 1 ? z[st.z1 - 2] + 1 : 0, hi: z[(st.z2 || st.z1) - 1] } : null; }
+  return null;
+}
+function compareSteps(w, set, ints, whole) {
+  const P = []; for (const b of w.blocks) for (let r = 0; r < (b.reps || 1); r++) for (const st of b.steps) P.push(st);
+  if (P.length === 1 && whole) return [[P[0], whole]];
+  if (!P.length || !ints.length) return null;
+  if (ints.length === P.length) return P.map((st, i) => [st, ints[i]]);
+  const hard = P.filter(st => factor(w.sport, st, set) >= 0.9), work = ints.filter(x => x.type === 'WORK');
+  return hard.length && hard.length === work.length ? hard.map((st, i) => [st, work[i]]) : null;
+}
+function planVsActualHtml(w, set, ints, sport, whole) {
+  const pairs = compareSteps(w, set, ints, whole);
+  if (!pairs) return `<div class="small muted">Die Intervalle der Einheit lassen sich den geplanten Schritten nicht eindeutig zuordnen (Runden auf der Uhr gedrückt?).</div><pre style="margin-top:8px">${esc(workoutText(w))}</pre>`;
+  const per = perOf(sport), unit = sport === 'Swim' ? '/100m' : '/km';
+  return `<table><tr><th>#</th><th>Soll</th><th class="num">Ziel</th><th class="num">Ist</th><th></th></tr>${pairs.map(([st, x], i) => {
+    const r = stepRange(sport, st, set); let ist = '–', ok = null, tgt = stepTargetText(sport, st, set) || stepText(sport, st).slice(2);
+    if (r) {
+      const v = r.k === 'pace' ? (x.distance && x.moving_time ? x.distance / x.moving_time : x.average_speed) : r.k === 'hr' ? x.average_heartrate : x.average_watts;
+      if (v) { ist = r.k === 'pace' ? fmtPace(v, per) + unit : Math.round(v) + (r.k === 'hr' ? ' bpm' : ' W');
+        const lo = Math.min(r.lo, r.hi), hi = Math.max(r.lo, r.hi); ok = v < lo * 0.98 ? (r.k === 'pace' ? 'zu langsam' : 'zu niedrig') : v > hi * 1.02 ? (r.k === 'pace' ? 'zu schnell' : 'zu hoch') : 'ok'; }
+      if (r.k === 'pace' && sport !== 'Ride') tgt = `${fmtPace(Math.max(r.lo, r.hi), per)}–${fmtPace(Math.min(r.lo, r.hi), per)}${unit}`;
+    }
+    return `<tr><td>${i + 1}</td><td>${esc(stepText(sport, st).slice(2))}</td><td class="num">${tgt}</td><td class="num">${ist}</td>
+      <td>${ok ? `<span class="pill"><span class="dot" style="background:${ok === 'ok' ? 'var(--ok)' : '#e2b33c'}"></span>${ok === 'ok' ? 'im Ziel' : ok}</span>` : ''}</td></tr>`; }).join('')}</table>`;
+}
+
+// =============== Formprognose bis zum Wettkampf ===============
+// CTL (42 Tage) und ATL (7 Tage) mit der geplanten Belastung (intervals.icu-TSS der Workouts) fortgeschrieben.
+async function formProjection(aid) {
+  const today = new Date(), to = ymd(today);
+  const w = (await iv('GET', `athlete/${aid}/wellness?oldest=${ymd(addDays(today, -4))}&newest=${to}`)) || [];
+  const last = [...w].reverse().find(x => x.ctl != null); if (!last) return null;
+  const evs = (await events(aid, to, ymd(addDays(today, 200)))) || [];
+  const races = evs.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
+  const end = races[0] ? addDays(parseYmd(races[0].start_date_local), 7) : addDays(today, 42);
+  const load = {}; evs.filter(e => e.category === 'WORKOUT').forEach(e => { const k = e.start_date_local.slice(0, 10); load[k] = (load[k] || 0) + (e.icu_training_load || 0); });
+  let ctl = last.ctl, atl = last.atl; const pts = [{ x: parseYmd(last.id), ctl, atl, tsb: ctl - atl }];
+  for (let d = addDays(parseYmd(last.id), 1); d <= end; d = addDays(d, 1)) { const prev = ctl - atl, L = load[ymd(d)] || 0; ctl += (L - ctl) / 42; atl += (L - atl) / 7; pts.push({ x: d, ctl, atl, tsb: prev }); }
+  const raceForm = races.map(r => { const p = pts.find(q => ymd(q.x) === r.start_date_local.slice(0, 10)); return { race: r, tsb: p ? p.tsb : null, ctl: p ? p.ctl : null }; });
+  return { pts, races, raceForm };
+}
+const formTxt = t => t == null ? '–' : (t > 0 ? '+' : '') + Math.round(t);
+
+// =============== Team-Übersicht ===============
+async function renderTeam() {
+  if (!S.athletes.length) { $('#view').innerHTML = '<div class="card empty">Noch keine Athleten.</div>'; return; }
+  $('#view').innerHTML = `<div class="team">${S.athletes.map(a => `<div class="card click team-card" data-ath="${esc(a.id)}"><div class="row" style="justify-content:space-between"><div class="row"><div class="av">${esc(initials(a.name))}</div><b>${esc(a.name)}</b></div><span id="tr-${esc(a.id)}"></span></div><div id="tm-${esc(a.id)}" style="margin-top:12px"><span class="spin"></span></div></div>`).join('')}</div>`;
+  $$('.team-card').forEach(c => c.onclick = () => { S.cur = c.dataset.ath; LS.set('cur', S.cur); renderAthletes(); setTab('home'); });
+  const today = new Date(), t = ymd(today), mon = monday(today);
+  await Promise.all(S.athletes.map(async a => {
+    try {
+      const [well, evs, acts, rec, nextEv] = await Promise.all([iv('GET', `athlete/${a.id}/wellness?oldest=${ymd(addDays(today, -2))}&newest=${t}`), events(a.id, ymd(addDays(today, -7)), ymd(addDays(mon, 6))),
+        activities(a.id, ymd(addDays(today, -7)), t), recovery(a.id).catch(() => null), events(a.id, t, ymd(addDays(today, 365)))]);
+      const w = [...(well || [])].reverse().find(x => x.ctl != null) || {}, match = matchPlan(evs, acts);
+      const wk = (evs || []).filter(e => e.category === 'WORKOUT' && parseYmd(e.start_date_local) >= mon);
+      const missed = (evs || []).filter(e => e.category === 'WORKOUT' && e.start_date_local.slice(0, 10) < t && !match[e.id]);
+      const comps = (evs || []).filter(e => match[e.id]).map(e => compliance(e, match[e.id])).filter(x => x != null);
+      const race = (nextEv || []).filter(isRace).sort((x, y) => x.start_date_local.localeCompare(y.start_date_local))[0];
+      const load7 = (acts || []).reduce((s, x) => s + (x.icu_training_load || 0), 0);
+      $('#tr-' + a.id).innerHTML = ampelHtml(rec);
+      const cell = (l, v, c) => `<div><div class="small muted">${l}</div><div style="font-weight:600;font-size:17px;${c ? 'color:' + c : ''}">${v}</div></div>`;
+      $('#tm-' + a.id).innerHTML = `<div class="g3" style="gap:10px">${cell('Fitness', n0(w.ctl))}${cell('Form', formTxt(w.ctl - w.atl))}${cell('TSS 7 Tage', n0(load7))}
+        ${cell('Diese Woche', `${wk.filter(e => match[e.id]).length}/${wk.length}`)}${cell('Verpasst (7 T)', missed.length, missed.length ? 'var(--warn)' : '')}${cell('Ø Plan erfüllt', comps.length ? Math.round(comps.reduce((s, x) => s + x, 0) / comps.length) + ' %' : '–', comps.length ? compColor(comps.reduce((s, x) => s + x, 0) / comps.length) : '')}</div>
+        <div class="small t2" style="margin-top:10px">${race ? `🏁 <span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} in ${Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5)} Tagen` : 'Kein Wettkampf geplant'}${rec && rec.level > 1 ? ` · ${rec.reasons.join(', ')}` : ''}</div>`;
+    } catch (e) { $('#tm-' + a.id).innerHTML = `<span class="err small">${esc(e.message)}</span>`; }
+  }));
+}
+
+// =============== Wochen kopieren, Plan-Vorlagen, Drag & Drop ===============
+const copyable = e => e.category === 'WORKOUT' || e.category === 'NOTE';
+function evCopy(e, date, ext) {
+  const o = { category: e.category, type: e.type, name: e.name, description: e.description || '', start_date_local: date + 'T00:00:00', hide_from_athlete: e.category === 'WORKOUT' ? hiddenFor(date) : false };
+  if (e.moving_time) o.moving_time = e.moving_time; if (ext) o.external_id = ext; return o;
+}
+const athOpts = sel => S.athletes.map(x => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+function copyWeekDialog(aid, src) {
+  openDialog(`<h2>⧉ Woche kopieren</h2><div class="small muted">Quelle: Woche ab ${dLong(parseYmd(src))}. Kopiert werden geplante Workouts und Notizen, keine Wettkämpfe.</div>
+    <div class="row" style="margin:14px 0"><label class="f">Ziel-Athlet<select id="cwAth">${athOpts(aid)}</select></label>
+      <label class="f">Ziel-Woche (beliebiger Tag)<input type="date" id="cwTo" value="${ymd(addDays(parseYmd(src), 7))}"></label>
+      <label class="f">Wochen<input type="number" id="cwN" min="1" max="12" value="1"></label></div>
+    <div id="cwRes" class="small t2"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="cwOk">Kopieren</button></div>`, () => {
+    $('#cwOk').onclick = async () => {
+      const to = monday(parseYmd($('#cwTo').value)), n = Math.max(1, +$('#cwN').value || 1), s = parseYmd(src), tAid = $('#cwAth').value;
+      $('#cwRes').innerHTML = '<span class="spin"></span>';
+      try {
+        const evs = ((await iv('GET', `athlete/${aid}/events?oldest=${src}&newest=${ymd(addDays(s, n * 7 - 1))}`)) || []).filter(copyable);
+        if (!evs.length) { $('#cwRes').textContent = 'In diesem Zeitraum ist nichts geplant.'; return; }
+        const out = evs.map(e => { const d = ymd(addDays(to, Math.round((parseYmd(e.start_date_local) - s) / 864e5))); return evCopy(e, d, e.category === 'WORKOUT' ? `copy:${e.id}:${tAid}:${d}` : null); });
+        await iv('POST', `athlete/${tAid}/events/bulk?upsert=true`, out);
+        closeDialog(); status(`${out.length} Einträge kopiert`); render();
+      } catch (e) { $('#cwRes').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    };
+  });
+}
+function saveTemplateDialog(aid, src) {
+  openDialog(`<h2>💾 Als Plan-Vorlage speichern</h2><div class="small muted">Ab Woche ${dLong(parseYmd(src))}. Gespeichert in deinem intervals.icu-Account, auf allen Geräten verfügbar.</div>
+    <div class="row" style="margin:14px 0"><label class="f" style="flex:1">Name<input id="tpName" placeholder="z.B. Marathon-Aufbau 4 Wochen"></label><label class="f">Wochen<input type="number" id="tpN" min="1" max="16" value="1"></label></div>
+    <div id="tpRes" class="small t2"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="tpOk">Speichern</button></div>`, () => {
+    $('#tpOk').onclick = async () => {
+      const name = $('#tpName').value.trim(), n = Math.max(1, +$('#tpN').value || 1), s = parseYmd(src); if (!name) return alert('Name angeben.');
+      try {
+        const evs = ((await iv('GET', `athlete/${aid}/events?oldest=${src}&newest=${ymd(addDays(s, n * 7 - 1))}`)) || []).filter(copyable);
+        if (!evs.length) { $('#tpRes').textContent = 'In diesem Zeitraum ist nichts geplant.'; return; }
+        const data = { weeks: n, items: evs.map(e => ({ day: Math.round((parseYmd(e.start_date_local) - s) / 864e5), category: e.category, type: e.type, name: e.name, description: e.description || '', moving_time: e.moving_time || null })) };
+        const ex = S.store.plans.find(p => p.name === name), body = { name: 'Plan: ' + name, type: 'Other', description: JSON.stringify(data) };
+        if (ex) { await iv('PUT', `athlete/0/workouts/${ex.id}`, body); ex.data = data; }
+        else { const r = await iv('POST', 'athlete/0/workouts', Object.assign({ folder_id: S.store.folderId }, body)); S.store.plans.push({ id: r.id, name, data }); }
+        closeDialog(); status(`Vorlage „${esc(name)}“ gespeichert (${data.items.length} Einträge)`);
+      } catch (e) { $('#tpRes').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    };
+  });
+}
+function applyPlanDialog(aid) {
+  const plans = S.store?.plans || [];
+  openDialog(`<h2>📋 Plan-Vorlage anwenden</h2>
+    ${plans.length ? `<select id="apPlan" size="${Math.min(8, Math.max(3, plans.length))}" style="width:100%;margin-top:10px">${plans.map(p => `<option value="${p.id}">${esc(p.name)} · ${p.data.weeks || '?'} Wo · ${(p.data.items || []).length} Einträge</option>`).join('')}</select>
+      <div class="row" style="margin:14px 0"><label class="f">Athlet<select id="apAth">${athOpts(aid)}</select></label><label class="f">Start (Woche ab)<input type="date" id="apFrom" value="${ymd(addDays(monday(new Date()), 7))}"></label></div>
+      <div id="apRes" class="small t2"></div>
+      <div class="row" style="margin-top:14px;justify-content:space-between"><button class="btn danger" id="apDel">Vorlage löschen</button><div class="row"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="apOk">Anwenden</button></div></div>`
+      : '<p class="t2">Noch keine Vorlagen. Im Kalender bei einer Woche auf „💾 Vorlage“ klicken.</p><div class="row" style="justify-content:flex-end"><button class="btn" onclick="closeDialog()">Schließen</button></div>'}`, () => {
+    if (!plans.length) return;
+    $('#apPlan').value = plans[0].id;
+    $('#apOk').onclick = async () => {
+      const p = plans.find(x => String(x.id) === $('#apPlan').value), tAid = $('#apAth').value, start = monday(parseYmd($('#apFrom').value)); if (!p) return;
+      try { const out = (p.data.items || []).map((it, i) => { const d = ymd(addDays(start, it.day)); return evCopy(it, d, it.category === 'WORKOUT' ? `plan:${p.id}:${i}:${d}` : null); });
+        await iv('POST', `athlete/${tAid}/events/bulk?upsert=true`, out); closeDialog(); status(`„${esc(p.name)}“ angewendet: ${out.length} Einträge`); render(); }
+      catch (e) { $('#apRes').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+    };
+    $('#apDel').onclick = async () => { const p = plans.find(x => String(x.id) === $('#apPlan').value); if (!p || !confirm(`Vorlage „${p.name}“ löschen?`)) return;
+      try { await iv('DELETE', `athlete/0/workouts/${p.id}`); S.store.plans = S.store.plans.filter(x => x !== p); applyPlanDialog(aid); } catch (e) { alert(e.message); } };
+  });
+}
+function bindDnD(aid) {
+  $$('[data-drag]').forEach(el => { el.draggable = true; el.ondragstart = ev => { ev.dataTransfer.setData('text/plain', el.dataset.drag); el.style.opacity = .5; }; el.ondragend = () => { el.style.opacity = ''; }; });
+  $$('.day[data-day]').forEach(d => {
+    d.ondragover = ev => { ev.preventDefault(); d.classList.add('drop'); }; d.ondragleave = () => d.classList.remove('drop');
+    d.ondrop = async ev => { ev.preventDefault(); d.classList.remove('drop'); const id = ev.dataTransfer.getData('text/plain'), e = S.evIndex[id], day = d.dataset.day;
+      if (!e || e.start_date_local.slice(0, 10) === day) return;
+      const body = { start_date_local: day + 'T00:00:00' }; if (e.category === 'WORKOUT') body.hide_from_athlete = hiddenFor(day);
+      try { await iv('PUT', `athlete/${aid}/events/${id}`, body); status(`„${esc(e.name)}“ auf ${dShort(parseYmd(day))} verschoben`); renderCal(); } catch (err) { status(err.message, true); } };
+  });
+}
+
+// =============== Schwellen-Vorschlag aus Leistungs- und Pace-Kurven ===============
+async function thresholdSuggest(aid) {
+  const today = ymd(new Date());
+  const [pw, pc, well, bw] = await Promise.all([iv('GET', `athlete/${aid}/power-curves.json?type=Run&curves=90d`).catch(() => null), iv('GET', `athlete/${aid}/pace-curves.json?type=Run&curves=90d`).catch(() => null),
+    iv('GET', `athlete/${aid}/wellness?oldest=${ymd(addDays(new Date(), -14))}&newest=${today}`).catch(() => null), iv('GET', `athlete/${aid}/power-curves.json?type=Ride&curves=90d`).catch(() => null)]);
+  const P = pw?.list?.[0], C = pc?.list?.[0], B = bw?.list?.[0], at = (arr, key, x) => { const i = (arr || []).indexOf(x); return i >= 0 ? key[i] : null; };
+  const info = [...(well || [])].reverse().find(x => (x.sportInfo || []).some(s => s.eftp)), eftp = t => info?.sportInfo?.find(s => s.type === t)?.eftp || null;
+  const model = (P?.powerModels || []).find(m => m.type === 'ECP') || (P?.powerModels || [])[0];
+  const cs = (C?.paceModels || []).find(m => m.type === 'CS')?.criticalSpeed || null;
+  const best = d => at(C?.distance, C?.values || [], d), races = [[5000, '5 km'], [10000, '10 km'], [21097.5, 'Halbmarathon']].map(([d, n]) => ({ d, n, t: best(d) })).filter(x => x.t);
+  const vd = races.length ? Math.max(...races.map(x => vdotOf(x.d, x.t))) : null;
+  return { cp: eftp('Run') ? Math.round(eftp('Run')) : model?.criticalPower || null, cpModel: model, p20: at(P?.secs, P?.values || [], 1200), p60: at(P?.secs, P?.values || [], 3600),
+    cs, races, vdot: vd, tFromVdot: vd ? speedAt(vd, 0.88) : null, rideFtp: eftp('Ride') ? Math.round(eftp('Ride')) : (B?.powerModels || [])[0]?.ftp || null };
+}
+
+// =============== Feedback (RPE, Gefühl, Kommentare) ===============
+const FEEL = { 1: '💪 Stark', 2: '🙂 Gut', 3: '😐 Normal', 4: '😕 Schwach', 5: '😫 Sehr schwach' };
+function feedbackPills(a) { return [a.icu_rpe ? `<span class="pill" title="Anstrengung (RPE)">RPE ${a.icu_rpe}</span>` : '', a.feel ? `<span class="pill" title="Gefühl">${FEEL[a.feel] || a.feel}</span>` : ''].join(''); }
+async function loadMessages(act) {
+  const box = $('#actMsg'); if (!box) return;
+  try {
+    const ms = (await iv('GET', `activity/${act.id}/messages`)) || [];
+    box.innerHTML = `${ms.length ? ms.map(m => `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="small muted">${esc(m.name || '')} · ${m.created ? new Date(m.created).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : ''}</div><div style="white-space:pre-wrap">${esc(m.content || '')}</div></div>`).join('') : '<div class="small muted">Noch keine Kommentare.</div>'}
+      <div class="row" style="margin-top:10px;align-items:flex-end"><textarea id="msgIn" rows="2" style="flex:1" placeholder="Kommentar an den Athleten …"></textarea><button class="btn pri" id="msgSend">Senden</button></div>`;
+    $('#msgSend').onclick = async () => { const c = $('#msgIn').value.trim(); if (!c) return; $('#msgSend').disabled = true;
+      try { await iv('POST', `activity/${act.id}/messages`, { content: c }); loadMessages(act); } catch (e) { alert(e.message); $('#msgSend').disabled = false; } };
+  } catch (e) { box.innerHTML = `<span class="err small">${esc(e.message)}</span>`; }
+}
+
 // =============== Start-Bibliothek ===============
 const DEFAULT_LIB = [
   { sport: 'Run', name: 'Easy Run 45min', desc: 'Locker laufen, Gesprächstempo.', blocks: [{ label: '', reps: 1, steps: [{ dur: 45, unit: 'm', lo: 78, hi: 88 }] }] },
@@ -1184,6 +1489,7 @@ const DEFAULT_LIB = [
   { sport: 'WeightTraining', name: 'Kraft Läufer A', desc: 'Sauber ausführen, 90 s Satzpause.', dur: 45, blocks: [], ex: [{ name: 'Kniebeuge', sets: 3, reps: 8, load: 'RPE 7' }, { name: 'Rumänisches Kreuzheben', sets: 3, reps: 8, load: 'RPE 7' }, { name: 'Ausfallschritte', sets: 3, reps: 10, load: 'je Bein' }, { name: 'Wadenheben einbeinig', sets: 3, reps: 15, load: '' }, { name: 'Plank', sets: 3, reps: 45, load: 'Sekunden' }] },
 ];
 
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 init();
 </script>
 </body>
