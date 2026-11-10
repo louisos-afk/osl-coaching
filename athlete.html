@@ -122,7 +122,7 @@ tr:hover td{background:rgba(255,255,255,.015)}
 .ev .m{color:var(--text2)}
 .ev.plan{border-style:dashed;background:transparent}
 .ev.race{border:1px solid var(--accent);background:var(--accent-soft)}
-.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:16px}
 .team-card:hover{border-color:var(--line2)}
 .day.drop{border-color:var(--accent);background:var(--accent-soft)}
 [data-drag]{cursor:grab}
@@ -214,6 +214,38 @@ ol.steps b{color:var(--text)}
   .cal{grid-template-columns:1fr}.cal .hd{display:none}
   .day{min-height:0}.day.past.empty-day{display:none}.day .add{opacity:1}
   .wk{flex-direction:row;flex-wrap:wrap;margin-bottom:10px}
+}
+/* Touch-Bedienung: Mindestgrößen für Finger, iOS-Selects, Vollbild-Dialoge am Handy */
+.kpi .l{overflow-wrap:anywhere;hyphens:auto;-webkit-hyphens:auto}
+.seg button{white-space:nowrap}
+select:not([size]){-webkit-appearance:none;appearance:none;padding-right:26px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa3b2' stroke-width='1.6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 9px center}
+input[type=date]{min-height:36px}
+.dlg-x{position:sticky;top:0;float:right;z-index:4;margin:-8px -8px 0 8px;width:36px;height:36px;border-radius:50%;border:1px solid var(--line2);background:var(--card2);color:var(--text2);font-size:20px;line-height:1;cursor:pointer}
+@media (pointer:coarse){
+  .btn{min-height:40px}.btn.sm{min-height:36px;padding:6px 11px;font-size:13px}
+  .seg button{min-height:36px;min-width:36px;padding:6px 11px}
+  select{min-height:36px}
+  .chip{min-height:38px}
+  input[type=checkbox]{width:20px;height:20px}
+  .icon-x{min-width:36px;min-height:36px}
+  .day .add{width:32px;height:32px;opacity:1}.day .addr{display:none}
+  .ev .x{width:28px;height:28px;top:-5px;right:-5px}
+  .wk .btn{min-height:34px;padding:5px 10px;font-size:12px}
+  .pill,.ev .tss .pill{font-size:11px}
+  .side-foot .btn{min-height:36px}
+  .dlg-x{width:40px;height:40px}
+}
+@media (max-width:640px){
+  dialog,dialog.wide{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;border:0;padding:16px 14px calc(24px + env(safe-area-inset-bottom))}
+  dialog .dlg-x{margin-top:env(safe-area-inset-top)}
+  .calbar{gap:8px}
+  .calbar .seg:nth-child(2){display:grid;grid-template-columns:repeat(7,minmax(0,1fr));width:100%}
+  .calbar .seg:nth-child(2) button{padding:6px 2px;min-width:0}
+  aside{padding:10px 12px;gap:6px}
+  #coachName{display:none}
+  .side-foot{width:auto;margin-left:auto}
+  #btnRefresh{font-size:0;gap:0}#btnRefresh::before{content:'↻';font-size:16px}
+  .tbl td,.tbl th,table td,table th{padding-left:6px;padding-right:6px}
 }
 
 /* ---- Athleten-App ---- */
@@ -542,7 +574,16 @@ async function powerCurveHtml(aid) {
     ${durs.map(([s, n]) => `<tr><td>${n}</td>${L.map(c => `<td class="num">${at(c, s) ? at(c, s) + ' W' : '–'}</td>`).join('')}${kg ? `<td class="num">${at(L[0], s) ? n2(at(L[0], s) / kg) : '–'}</td>` : ''}</tr>`).join('')}</table>`;
 }
 const initials = n => n.split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
-function openDialog(html, after) { $('#dlgBody').innerHTML = html; $('#dlg').showModal(); after && after(); }
+function openDialog(html, after) {
+  const d = $('#dlg'), b = $('#dlgBody'); b.innerHTML = html;
+  // Jeder Dialog bekommt oben rechts ein Schließen-Kreuz, falls er keinen eigenen Schließen-Knopf im Kopf hat
+  const head = b.firstElementChild;
+  if (!(head && head.querySelector('[onclick="closeDialog()"]'))) b.insertAdjacentHTML('afterbegin', '<button class="dlg-x" aria-label="Schließen" onclick="closeDialog()">×</button>');
+  if (!d.open) d.showModal(); d.scrollTop = 0;
+  // Kein Fokusrahmen auf dem ersten Knopf, wenn per Finger geöffnet
+  if (matchMedia('(pointer:coarse)').matches && document.activeElement) document.activeElement.blur();
+  after && after();
+}
 function closeDialog() { $('#dlg').close(); }
 const isRace = e => /^RACE_/.test(e.category || '');
 function raceInfo(e) { const m = String(e.description || '').match(/^Zielzeit:\s*([\d:]+)/m); return { prio: (e.category || 'RACE_A').slice(5) || 'A', goal: m ? parseTime(m[1]) : null, notes: String(e.description || '').replace(/^Zielzeit:.*\n?/m, '').trim() }; }
@@ -699,14 +740,17 @@ async function renderPlan() {
   try {
     [evs, acts, set, races] = await Promise.all([events(id, ymd(mon), ymd(addDays(today, 21))), activities(id, ymd(mon), t), sportSettings(id), events(id, t, ymd(addDays(today, 365)))]);
   } catch (e) { $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
-  evs = evs.filter(visible); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
+  const horizon = ymd(addDays(today, 21));
+  evs = evs.filter(e => visible(e) && e.start_date_local.slice(0, 10) <= horizon); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
   const race = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local))[0];
-  const todayEv = evs.filter(e => e.start_date_local.slice(0, 10) === t && !isRace(e)), todayAct = acts.filter(a => a.start_date_local.slice(0, 10) === t && !doneIds.has(a.id));
+  const todayRace = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) === t), todayEv = evs.filter(e => e.start_date_local.slice(0, 10) === t && !isRace(e)), todayAct = acts.filter(a => a.start_date_local.slice(0, 10) === t && !doneIds.has(a.id));
   let h = '';
-  if (race) { const r = raceInfo(race), d = Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5);
+  if (race && !todayRace.length) { const r = raceInfo(race), d = Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5);
     h += `<div class="race-banner click" data-ev="${race.id}"><div class="big">${d}</div><div><div class="small t2">${d === 1 ? 'Tag' : 'Tage'} bis</div><b>🏁 ${esc(race.name)}</b><div class="small t2">${dLong(parseYmd(race.start_date_local))}${r.goal ? ' · Ziel ' + fmtDur(r.goal) : ''}</div></div></div>`; }
   h += `<h2 class="sec">Heute · ${WD[today.getDay()]} ${dShort(today)}</h2>`;
-  if (!todayEv.length && !todayAct.length) h += `<div class="wcard" style="cursor:default"><div class="nm">😌 Ruhetag</div><div class="meta">Erholung gehört zum Training.</div></div>`;
+  for (const e of todayRace) { const r = raceInfo(e);
+    h += `<div class="wcard click" data-ev="${e.id}" style="border-color:var(--accent)"><div class="nm">🏁 Heute ist Wettkampf: ${esc(e.name)}</div><div class="meta">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', 'Priorität ' + r.prio].filter(Boolean).join(' · ')}</div><div class="small" style="color:var(--accent);margin-top:6px">Viel Erfolg! Details ›</div></div>`; }
+  if (!todayEv.length && !todayAct.length && !todayRace.length) h += `<div class="wcard" style="cursor:default"><div class="nm">😌 Ruhetag</div><div class="meta">Erholung gehört zum Training.</div></div>`;
   for (const e of todayEv) { const w = wOf(e), a = match[e.id];
     h += a ? `<div class="wcard done click" data-act="${esc(a.id)}"><div class="nm"><span class="check">✓</span>${esc(e.name)}</div>
         <div class="meta">Erledigt: ${actMeta(a)}</div><div class="row" style="gap:6px;margin-top:8px">${compPill(compliance(e, a))}${feedbackPills(a) || '<span class="pill" style="color:var(--accent)">Wie war\'s? Feedback geben ›</span>'}</div></div>`
@@ -733,7 +777,7 @@ async function renderPlan() {
     h += '</div></div>';
   }
   // Alle kommenden Wettkämpfe
-  const allRaces = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
+  const allRaces = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) > t).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
   if (allRaces.length) h += `<h2 class="sec">Kommende Wettkämpfe</h2>${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
     return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:var(--accent)">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px"><span class="prio">${ri.prio}</span><span class="t">🏁 ${esc(r.name)}</span>
       <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
