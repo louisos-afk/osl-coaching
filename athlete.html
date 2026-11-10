@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="OSL Training">
 <link rel="manifest" href="athlete.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/favicon.png">
 <title>OSL-Coaching · Training</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +32,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* Sidebar */
 aside{background:var(--bg2);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow:auto}
 .brand{display:flex;align-items:center;gap:10px;padding:0 6px 16px;font-weight:700;font-size:16px;letter-spacing:-.01em}
+.brand .logo{width:34px;height:34px;flex:none}
 .brand i{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:var(--accent-ink);font-style:normal;font-size:14px}
 .side-h{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:12px 8px 6px}
 .ath{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;cursor:pointer;border:1px solid transparent}
@@ -202,6 +203,7 @@ body{display:block;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 .wrap{max-width:760px;margin:0 auto;padding:16px 16px 24px}
 .topbar{display:flex;align-items:center;gap:10px;padding:calc(12px + env(safe-area-inset-top)) 16px 4px;max-width:760px;margin:0 auto}
 .topbar .brand{padding:0;font-size:15px}
+.topbar .brand .logo{width:30px;height:30px}
 .topbar .who{margin-left:auto;color:var(--text2);font-size:13px}
 .bottomnav{position:fixed;left:0;right:0;bottom:0;background:rgba(16,19,24,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:center;gap:4px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));z-index:10}
 .bottomnav button{flex:1;max-width:180px;border:0;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:6px;border-radius:10px;cursor:pointer}
@@ -240,7 +242,7 @@ dialog.full{max-width:760px;width:100vw;max-height:100dvh;border-radius:18px}
 </style>
 </head>
 <body>
-<div class="topbar"><div class="brand"><i>◆</i>OSL-Coaching</div><div class="who" id="who"></div></div>
+<div class="topbar"><div class="brand"><img src="icons/brand.png" alt="" class="logo">OSL-Coaching</div><div class="who" id="who"></div></div>
 <main class="wrap" id="view"></main>
 <span class="status" id="status" style="position:fixed;top:8px;right:12px;z-index:20"></span>
 <nav class="bottomnav" id="nav">
