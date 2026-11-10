@@ -750,6 +750,8 @@ async function planDialog(date, wid) {
       <label class="f">Datum<input type="date" id="plDate" value="${date}"></label></div>
     <div class="sport-tabs" id="plSports">${Object.entries(SPORTS).map(([k, s]) => `<button class="chip ${k === sport ? 'on' : ''}" data-s="${k}">${s.icon} ${s.label}</button>`).join('')}</div>
     <select id="plW" size="7" style="width:100%"></select><div id="plPrev" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><span class="small t2">Oder Workout-Datei (.fit, .zwo, .erg, .mrc) direkt in den Kalender laden:</span>
+      <label class="btn sm">📂 Datei wählen<input type="file" id="plFile" accept="${FILE_ACCEPT}" hidden></label><span class="small muted" id="plFileRes"></span></div>
     <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="plOk">In Kalender legen</button></div>`, () => {
     const fill = () => { const list = S.lib.filter(w => w.sport === sport); $('#plW').innerHTML = list.map(w => `<option value="${esc(w.id)}" ${w.id === wid ? 'selected' : ''}>${esc(w.name)}</option>`).join(''); if (!$('#plW').value && list[0]) $('#plW').value = list[0].id; prev(); };
     const prev = async () => { const w = S.lib.find(x => x.id === $('#plW').value); if (!w) { $('#plPrev').innerHTML = '<div class="muted">Keine Workouts in dieser Sportart.</div>'; return; }
@@ -758,6 +760,10 @@ async function planDialog(date, wid) {
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
     $('#plW').onchange = prev; $('#plAth').onchange = prev; fill();
     $('#plRace').onclick = () => raceDialog($('#plAth').value, $('#plDate').value);
+    $('#plFile').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; const aid = $('#plAth').value, d = $('#plDate').value;
+      $('#plFileRes').innerHTML = '<span class="spin"></span>';
+      try { const e = await importToCalendar(aid, f, sport === 'WeightTraining' ? 'Run' : sport, d); closeDialog(); status(`„${esc(e.name || f.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal(); }
+      catch (err) { $('#plFileRes').innerHTML = `<span class="err">${esc(err.message)}</span>`; } };
     $('#plOk').onclick = async () => { const w = S.lib.find(x => x.id === $('#plW').value), aid = $('#plAth').value, d = $('#plDate').value; if (!w || !d) return;
       try { await planWorkout(aid, w, d); closeDialog(); status(`„${esc(w.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal(); } catch (e) { alert(e.message); } };
   });
@@ -774,11 +780,14 @@ function renderLib() {
   const list = S.lib.filter(w => w.sport === S.libSport);
   if (!list.some(w => w.id === S.sel)) S.sel = list[0]?.id || null;
   $('#view').innerHTML = `<div class="sport-tabs">${Object.entries(SPORTS).map(([k, s]) => `<button class="chip ${k === S.libSport ? 'on' : ''}" data-s="${k}">${s.icon} ${s.label} <small class="muted">${S.lib.filter(w => w.sport === k).length}</small></button>`).join('')}</div>
-    <div class="side-main"><div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">${SPORTS[S.libSport].label}</h3><button class="btn sm pri" id="wNew">+ Neu</button></div>
+    <div class="side-main"><div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">${SPORTS[S.libSport].label}</h3><div class="row" style="gap:6px"><label class="btn sm" title="Workout-Datei importieren (.fit, .zwo, .erg, .mrc)">📂 Import<input type="file" id="wFile" accept="${FILE_ACCEPT}" hidden></label><button class="btn sm pri" id="wNew">+ Neu</button></div></div>
       ${list.map(w => { const t = totals(w, null); return `<div class="lib-item ${w.id === S.sel ? 'on' : ''}" data-id="${esc(w.id)}"><span>${esc(w.name)}</span><small>${t.sec ? fmtH(t.sec) : ''}</small></div>`; }).join('') || '<div class="muted small">Noch keine Workouts.</div>'}</div>
       <div id="editor"></div></div>`;
   $$('.sport-tabs .chip').forEach(c => c.onclick = () => { S.libSport = c.dataset.s; renderLib(); });
   $$('.lib-item').forEach(el => el.onclick = () => { S.sel = el.dataset.id; renderLib(); });
+  $('#wFile').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; status('<span class="spin"></span> Importiere …');
+    try { const w = await importToLibrary(f, S.libSport === 'WeightTraining' ? 'Run' : S.libSport); S.libSport = w.sport; S.sel = w.id; status(`„${esc(w.name)}“ importiert`); renderLib(); }
+    catch (err) { status('Import fehlgeschlagen: ' + err.message, true); } };
   $('#wNew').onclick = async () => {
     const sp = S.libSport, base = SPORTS[sp].strength ? { ex: [{ name: 'Kniebeuge', sets: 3, reps: 10, load: '' }], dur: 45, blocks: [] }
       : { blocks: [{ label: 'Warmup', reps: 1, steps: [{ dur: sp === 'Swim' ? 400 : 10, unit: sp === 'Swim' ? 'mtr' : 'm', lo: sp === 'Ride' ? 55 : 75, hi: sp === 'Ride' ? 65 : 85, note: '' }] }] };
@@ -887,6 +896,26 @@ function mountEditor(box, w, o = {}) {
   }
 }
 
+// =============== Workout-Dateien (.fit, .zwo, .erg, .mrc) ===============
+// intervals.icu wandelt die Datei in Workout-Schritte um und schickt sie wie jedes Workout an die Uhr.
+const FILE_ACCEPT = '.fit,.zwo,.erg,.mrc';
+const fileB64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(f); });
+async function importToLibrary(file, sport) {
+  const w = await iv('POST', 'athlete/0/workouts', { folder_id: S.folderId, filename: file.name, file_contents_base64: await fileB64(file), type: sport });
+  const sp = sportOf(w.type || sport), n = Object.assign({ id: String(w.id), name: w.name || file.name, sport: sp, dur: w.moving_time ? Math.round(w.moving_time / 60) : 45 }, parseWorkout(sp, w.description));
+  S.lib.push(n); return n;
+}
+async function importToCalendar(aid, file, sport, date) {
+  return iv('POST', `athlete/${aid}/events`, { category: 'WORKOUT', start_date_local: date + 'T00:00:00', type: sport, filename: file.name, file_contents_base64: await fileB64(file), hide_from_athlete: hiddenFor(date) });
+}
+async function downloadEventFit(aid, e) {
+  const key = LS.get('key', '');
+  const r = await fetch(`https://intervals.icu/api/v1/athlete/${aid}/events/${e.id}/download.fit`, { headers: { Authorization: 'Basic ' + btoa('API_KEY:' + key) } });
+  if (!r.ok) throw new Error('Download fehlgeschlagen (' + r.status + ')');
+  const url = URL.createObjectURL(await r.blob()), a = document.createElement('a');
+  a.href = url; a.download = (e.name || 'workout').replace(/[^\w\-äöüÄÖÜß ]+/g, '').trim() + '.fit'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 // =============== Wettkämpfe ===============
 const isRace = e => /^RACE_/.test(e.category || '');
 function raceInfo(e) { const m = String(e.description || '').match(/^Zielzeit:\s*([\d:]+)/m); return { prio: (e.category || 'RACE_A').slice(5) || 'A', goal: m ? parseTime(m[1]) : null, notes: String(e.description || '').replace(/^Zielzeit:.*\n?/m, '').trim() }; }
@@ -949,7 +978,7 @@ async function openEvent(aid, e) {
       <label class="row small t2">Datum <input type="date" id="evDate" value="${e.start_date_local.slice(0, 10)}"></label></div></div>
     <div id="evEd"></div>
     <div class="row" style="margin-top:16px;justify-content:space-between">
-      <div class="row"><button class="btn danger" id="evDel">Löschen</button><button class="btn" id="evLib">In Bibliothek übernehmen</button></div>
+      <div class="row"><button class="btn danger" id="evDel">Löschen</button><button class="btn" id="evLib">In Bibliothek übernehmen</button><button class="btn" id="evFit" title="Als .fit-Datei herunterladen">⬇ .fit</button></div>
       <div class="row"><button class="btn" id="evClose">Schließen</button><button class="btn pri" id="evSave">Speichern</button></div></div>`, () => {
     mountEditor($('#evEd'), w, { plain: true, athleteId: aid, onChange: () => { dirty = true; $('#evSave').textContent = 'Speichern •'; } });
     $('#evDate').onchange = () => { dirty = true; $('#evSave').textContent = 'Speichern •'; if ($('#evDate').value) $('#evVis').checked = !hiddenFor($('#evDate').value); };
@@ -961,6 +990,7 @@ async function openEvent(aid, e) {
       if (t.sec) body.moving_time = Math.round(t.sec);
       try { await iv('PUT', `athlete/${aid}/events/${e.id}`, body); closeDialog(); status('Workout gespeichert'); if (S.view === 'cal') renderCal(); else render(); } catch (err) { alert(err.message); }
     };
+    $('#evFit').onclick = async () => { try { await downloadEventFit(aid, e); } catch (err) { alert(err.message); } };
     $('#evDel').onclick = async () => { if (!confirm('Geplantes Workout löschen? Es verschwindet auch von der Uhr.')) return;
       try { await iv('DELETE', `athlete/${aid}/events/${e.id}`); closeDialog(); if (S.view === 'cal') renderCal(); else render(); } catch (err) { alert(err.message); } };
     $('#evLib').onclick = async () => { try { await createWorkout(Object.assign(JSON.parse(JSON.stringify(w)), { blocks: w.blocks || [], ex: w.ex || [] })); $('#evLib').textContent = 'In Bibliothek ✓'; } catch (err) { alert(err.message); } };
