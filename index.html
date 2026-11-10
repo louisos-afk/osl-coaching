@@ -502,7 +502,9 @@ async function init() {
     S.me = await iv('GET', 'athlete/0');
     $('#coachName').textContent = 'Coach: ' + (S.me.name || S.me.id);
     await loadAthletes(); await loadLib(); await loadStore().catch(() => { S.store = { settings: {}, plans: [] }; });
-  } catch (e) { status(e.message, true); $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
+  } catch (e) { status(e.message, true);
+    $('#view').innerHTML = `<div class="card err">${esc(e.message)}<div class="row" style="margin-top:12px"><button class="btn pri" id="errKey">API-Key ändern</button><button class="btn" id="errRetry">Erneut versuchen</button></div></div>`;
+    $('#errKey').onclick = () => keyDialog(false); $('#errRetry').onclick = () => init(); return; }
   status('');
   if (!S.athletes.some(a => a.id === S.cur)) S.cur = S.athletes[0]?.id || null;
   renderAthletes(); render();
