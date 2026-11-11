@@ -215,6 +215,9 @@ ol.steps b{color:var(--text)}
   .day{min-height:0}.day.past.empty-day{display:none}.day .add{opacity:1}
   .wk{flex-direction:row;flex-wrap:wrap;margin-bottom:10px}
 }
+/* iOS: Scrollen im Fenster darf nicht auf die Seite dahinter überspringen (sonst hängt das Fenster nach dem Überziehen) */
+dialog[open]{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+html.dlg-open,html.dlg-open body{overflow:hidden;overscroll-behavior:none}
 /* Touch-Bedienung: Mindestgrößen für Finger, iOS-Selects, Vollbild-Dialoge am Handy */
 .kpi .l{overflow-wrap:anywhere;hyphens:auto;-webkit-hyphens:auto}
 .seg button{white-space:nowrap}
@@ -599,7 +602,13 @@ function openDialog(html, after) {
   // Jeder Dialog bekommt oben rechts ein Schließen-Kreuz, falls er keinen eigenen Schließen-Knopf im Kopf hat
   const head = b.firstElementChild;
   if (!(head && head.querySelector('[onclick="closeDialog()"]'))) b.insertAdjacentHTML('afterbegin', '<button class="dlg-x" aria-label="Schließen" onclick="closeDialog()">×</button>');
-  if (!d.open) d.showModal(); d.scrollTop = 0;
+  if (!d._osl) { d._osl = 1;
+    d.addEventListener('close', () => document.documentElement.classList.remove('dlg-open'));
+    // Inhalt nie exakt am oberen/unteren Rand stehen lassen, dann bleibt die Geste im Fenster
+    d.addEventListener('touchstart', () => { const max = d.scrollHeight - d.clientHeight; if (max <= 1) return; if (d.scrollTop <= 0) d.scrollTop = 1; else if (d.scrollTop >= max) d.scrollTop = max - 1; }, { passive: true });
+    d.addEventListener('touchmove', ev => { if (d.scrollHeight <= d.clientHeight + 1 && !ev.target.closest('.tbl-wrap,textarea')) ev.preventDefault(); }, { passive: false }); }
+  document.documentElement.classList.add('dlg-open');
+  if (!d.open) d.showModal(); d.scrollTop = 1;
   // Kein Fokusrahmen auf dem ersten Knopf, wenn per Finger geöffnet
   if (matchMedia('(pointer:coarse)').matches && document.activeElement) document.activeElement.blur();
   after && after();
