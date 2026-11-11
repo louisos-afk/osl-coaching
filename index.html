@@ -644,7 +644,7 @@ const ecoRuns = acts => acts.filter(a => sportOf(a.type) === 'Run' && a.moving_t
   .sort((x, y) => x.date - y.date);
 function ecoKpis(a) { const e = economy(a); return ECO.filter(m => e[m[0]] != null).map(m => [m[1], m[4](e[m[0]]) + (m[2] ? ' ' + m[2] : '')]); }
 // Trendkarten + Diagramme; el bekommt nur Kennzahlen mit mindestens 3 Werten
-function ecoCards(el, acts, cls = 'g2') {
+function ecoCards(el, acts, cls = 'g2', xr = null) {
   const runs = ecoRuns(acts), roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
   const avail = ECO.filter(m => runs.filter(r => r[m[0]] != null).length >= 3);
   if (!avail.length) { el.innerHTML = '<div class="small muted">Keine Laufdynamik-Daten (Stryd oder Brustgurt) im Zeitraum.</div>'; return; }
@@ -653,16 +653,19 @@ function ecoCards(el, acts, cls = 'g2') {
   el.innerHTML = `<div class="kpis">${avail.map(m => { const v = runs.filter(r => r[m[0]] != null); return `<div class="kpi"><div class="l">${m[1]}</div><div class="v">${m[4](v.reduce((s, r) => s + r[m[0]], 0) / v.length)}<small>${m[2]}</small></div><div class="d">${tr(m[0], m[5])}</div></div>`; }).join('')}</div>
     <div class="${cls}">${avail.map(m => `<div class="card"><h3>${m[1]}${m[2] ? ' · ' + m[2] : ''}</h3><div class="small muted" style="margin:-6px 0 8px">${m[3]}</div><div data-eco="${m[0]}"></div></div>`).join('')}</div>`;
   for (const m of avail) { const rs = runs.filter(r => r[m[0]] != null);
-    chart($(`[data-eco="${m[0]}"]`, el), [{ name: 'Einzelner Lauf', color: m[6], scatter: true, pts: rs.map(r => ({ x: r.date, y: r[m[0]], label: `${r.name} · ${fmtPace(r.speed)}/km` })) }, { name: 'Ø 5 Läufe', color: m[6], pts: roll(rs, m[0]) }], { yfmt: m[4] }); }
+    chart($(`[data-eco="${m[0]}"]`, el), [{ name: 'Einzelner Lauf', color: m[6], scatter: true, pts: rs.map(r => ({ x: r.date, y: r[m[0]], label: `${r.name} · ${fmtPace(r.speed)}/km` })) }, { name: 'Ø 5 Läufe', color: m[6], pts: roll(rs, m[0]) }], Object.assign({ xr }, { yfmt: m[4] })); }
 }
 // Leistungskurve: beste Watt über feste Dauern, letzte 6 Wochen gegen 1 Jahr
-async function powerCurveHtml(aid) {
-  const d = await iv('GET', `athlete/${aid}/power-curves.json?type=Run&curves=42d,1y`).catch(() => null), L = d?.list || [];
-  if (!L.length || !L[0].secs?.length) return '<div class="small muted">Keine Leistungsdaten.</div>';
-  const at = (c, s) => { const i = c.secs.indexOf(s); return i >= 0 ? c.values[i] : null; }, kg = L[0].weight || L[1]?.weight;
+async function powerCurveHtml(aid, from, to) {
+  // Gleicher Zeitraum wie die Diagramme: endet er heute, "N Tage" (sicher unterstützt), sonst Datumsbereich
+  const today = ymd(new Date()), days = from ? Math.round((parseYmd(to || today) - parseYmd(from)) / 864e5) + 1 : 42;
+  const spec = !from || (to || today) >= today ? `${days}d` : `r.${from}.${to}`;
+  const d = await iv('GET', `athlete/${aid}/power-curves.json?type=Run&curves=${spec}`).catch(() => null), L = d?.list || [];
+  if (!L.length || !L[0].secs?.length) return `<div class="small muted">${spec.startsWith('r.') ? 'Für diesen Zeitraum liefert intervals.icu keine Leistungskurve. Wähle einen Zeitraum bis heute.' : 'Keine Leistungsdaten im Zeitraum.'}</div>`;
+  const c = L[0], at = s => { const i = c.secs.indexOf(s); return i >= 0 ? c.values[i] : null; }, kg = c.weight;
   const durs = [[60, '1 min'], [180, '3 min'], [300, '5 min'], [600, '10 min'], [1200, '20 min'], [1800, '30 min'], [3600, '60 min']];
-  return `<table><tr><th>Dauer</th>${L.map(c => `<th class="num">${c.label === '42 days' ? '6 Wochen' : c.label === '1 year' ? '1 Jahr' : esc(c.label)}</th>`).join('')}${kg ? '<th class="num">W/kg (6 Wo)</th>' : ''}</tr>
-    ${durs.map(([s, n]) => `<tr><td>${n}</td>${L.map(c => `<td class="num">${at(c, s) ? at(c, s) + ' W' : '–'}</td>`).join('')}${kg ? `<td class="num">${at(L[0], s) ? n2(at(L[0], s) / kg) : '–'}</td>` : ''}</tr>`).join('')}</table>`;
+  return `<table><tr><th>Dauer</th><th class="num">Bestwert im Zeitraum</th>${kg ? '<th class="num">W/kg</th>' : ''}</tr>
+    ${durs.map(([sec, n]) => `<tr><td>${n}</td><td class="num">${at(sec) ? at(sec) + ' W' : '–'}</td>${kg ? `<td class="num">${at(sec) ? n2(at(sec) / kg) : '–'}</td>` : ''}</tr>`).join('')}</table>`;
 }
 
 // =============== Athleten ===============
@@ -1294,17 +1297,10 @@ const presetDates = p => { const d = PRESETS_R.find(x => x[0] === p)[1]; return 
 function rangeDates() { const r = S.range; return r.preset ? presetDates(r.preset) : [r.from, r.to]; }
 // Jede Karte kann einen eigenen Zeitraum haben; ohne Angabe gilt der obere Zeitraum.
 const CARDS = { load: 'Trainingsbelastung pro Woche', fit: 'Fitness und Belastung', efW: 'Effizienz Leistung · Watt pro Herzschlag (NP / Ø HF)', efP: 'Effizienz Pace · Meter pro Herzschlag', tbl: 'Einheiten im Zeitraum' };
-function cardDates(k) { const c = LS.get('cardRange', {})[k]; if (!c) return rangeDates(); return c.preset ? presetDates(c.preset) : [c.from, c.to]; }
+// Alle Diagramme nutzen den einen Zeitraum oben
+function cardDates() { return rangeDates(); }
 function setCardRange(k, v) { const all = LS.get('cardRange', {}); if (v) all[k] = v; else delete all[k]; LS.set('cardRange', all); }
-function cardHead(k) {
-  const c = LS.get('cardRange', {})[k], [f, t] = cardDates(k), val = !c ? '' : c.preset || 'custom';
-  return `<div class="row" style="justify-content:space-between;margin-bottom:10px"><h3 style="margin:0">${CARDS[k]}</h3>
-    <div class="row" style="gap:6px"><select class="cr" data-k="${k}" style="padding:4px 8px;font-size:12px">
-      <option value="" ${val === '' ? 'selected' : ''}>Wie oben</option>${PRESETS_R.map(([p]) => `<option value="${p}" ${val === p ? 'selected' : ''}>${p}</option>`).join('')}
-      <option value="custom" ${val === 'custom' ? 'selected' : ''}>Eigener …</option></select>
-    ${val === 'custom' ? `<input type="date" class="crf" data-k="${k}" value="${f}" style="padding:4px 6px;font-size:12px"><input type="date" class="crt" data-k="${k}" value="${t}" style="padding:4px 6px;font-size:12px">`
-      : `<span class="small muted">${dShort(parseYmd(f))} – ${dShort(parseYmd(t))}</span>`}</div></div>`;
-}
+function cardHead(k) { return `<h3>${CARDS[k]}</h3>`; }
 async function renderAna() {
   const a = cur(); const [from, to] = rangeDates(); const easy = LS.get('easyOnly', false);
   $('#view').innerHTML = `<div class="calbar"><div class="seg" id="rp">${PRESETS_R.map(([p]) => `<button data-p="${p}" class="${S.range.preset === p ? 'on' : ''}">${p}</button>`).join('')}</div>
@@ -1345,26 +1341,25 @@ async function renderAna() {
     <h2 style="font-size:16px;margin:28px 0 12px">Laufökonomie (Stryd)</h2><div id="ecoBox"></div>
     <div class="card" style="margin-top:16px"><h3>Leistungskurve Laufen</h3><div class="tbl-wrap" id="pcBox"><span class="spin"></span></div></div>
     <div class="card" style="margin-top:16px">${cardHead('tbl')}<div class="tbl-wrap tall" id="ch-tbl"></div></div>`;
-  ecoCards($('#ecoBox'), acts.filter(x => x.start_date_local.slice(0, 10) >= from && x.start_date_local.slice(0, 10) <= to));
-  powerCurveHtml(a.id).then(h => { if ($('#pcBox')) $('#pcBox').innerHTML = h; });
+  ecoCards($('#ecoBox'), acts.filter(x => x.start_date_local.slice(0, 10) >= from && x.start_date_local.slice(0, 10) <= to), 'g2', [parseYmd(from), parseYmd(to)]);
+  powerCurveHtml(a.id, from, to).then(h => { if ($('#pcBox')) $('#pcBox').innerHTML = h; });
   if ($('#toThr')) $('#toThr').onclick = () => setTab('thr');
   formProjection(a.id).then(pr => { if (stale(a.id) || !$('#ch-proj')) return;
     if (!pr) { $('#ch-proj').innerHTML = '<div class="muted small">Keine Fitnessdaten.</div>'; return; }
     chart($('#ch-proj'), [{ name: 'Fitness 6 Wochen (CTL)', color: 'var(--s1)', pts: pr.pts.map(p => ({ x: p.x, y: p.ctl })) }, { name: 'Belastung 7 Tage (ATL)', color: 'var(--s2)', pts: pr.pts.map(p => ({ x: p.x, y: p.atl })) },
       { name: 'Form (TSB)', color: 'var(--s3)', pts: pr.pts.map(p => ({ x: p.x, y: p.tsb, label: pr.races.find(r => r.start_date_local.slice(0, 10) === ymd(p.x)) ? '🏁 Form' : null })) }], { yfmt: n0, w: 1100, h: 200 });
     $('#projInfo').innerHTML = pr.raceForm.length ? pr.raceForm.slice(0, 3).map(r => `🏁 ${esc(r.race.name)}: Form ${formTxt(r.tsb)}, Fitness ${n0(r.ctl)}`).join(' · ') + ' <span class="muted">(Form +5 bis +25 gilt als frisch)</span>' : 'Kein Wettkampf eingetragen, Prognose 6 Wochen'; });
-  $$('.cr').forEach(s => s.onchange = () => { const k = s.dataset.k, v = s.value;
-    if (!v) setCardRange(k, null); else if (v === 'custom') { const [f, t] = cardDates(k); setCardRange(k, { from: f, to: t }); } else setCardRange(k, { preset: v }); renderAna(); });
-  $$('.crf,.crt').forEach(inp => inp.onchange = () => { const k = inp.dataset.k, f = $(`.crf[data-k="${k}"]`).value, t = $(`.crt[data-k="${k}"]`).value; if (f && t && f <= t) { setCardRange(k, { from: f, to: t }); renderAna(); } });
+  const xr = [parseYmd(from), parseYmd(to)];
   // Karten
   { const r = cardDates('load'), Wk = weeks(r, inR(r));
-    chart($('#ch-load'), [{ name: 'TSS Watt', color: 'var(--s1)', pts: Wk.map(x => ({ x: x.x, y: x.p })) }, { name: 'TSS HR', color: 'var(--s2)', pts: Wk.map(x => ({ x: x.x, y: x.h })) }, { name: 'TSS Pace', color: 'var(--s3)', pts: Wk.map(x => ({ x: x.x, y: x.pa })) }], { dots: true, xfmt: d => `KW ab ${dShort(d)}`, yfmt: n0 }); }
+    const wx = x => x.x < xr[0] ? xr[0] : x.x; // erste Woche am Zeitraumbeginn zeigen
+    chart($('#ch-load'), [{ name: 'TSS Watt', color: 'var(--s1)', pts: Wk.map(x => ({ x: wx(x), y: x.p })) }, { name: 'TSS HR', color: 'var(--s2)', pts: Wk.map(x => ({ x: wx(x), y: x.h })) }, { name: 'TSS Pace', color: 'var(--s3)', pts: Wk.map(x => ({ x: wx(x), y: x.pa })) }], { dots: true, xfmt: d => `KW ab ${dShort(d)}`, yfmt: n0, xr }); }
   { const [f, t] = cardDates('fit'), wl = (well || []).filter(x => x.ctl != null && x.id >= f && x.id <= t);
-    chart($('#ch-fit'), [{ name: 'Fitness 6 Wochen (CTL)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung 7 Tage (ATL)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0 }); }
+    chart($('#ch-fit'), [{ name: 'Fitness 6 Wochen (CTL)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung 7 Tage (ATL)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0, xr }); }
   const roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
   for (const [k, field, color, empty] of [['efW', 'efW', 'var(--s1)', 'Keine Läufe mit Watt und HF im Zeitraum.'], ['efP', 'efPace', 'var(--s3)', 'Keine Läufe mit HF im Zeitraum.']]) {
     const rs = runsOf(inR(cardDates(k))).filter(m => m[field]).sort((p, q) => p.date - q.date);
-    chart($('#ch-' + k), [{ name: 'Einzelner Lauf', color, scatter: true, pts: rs.map(m => ({ x: m.date, y: m[field], label: m.name })) }, { name: 'Ø 5 Läufe', color, pts: roll(rs, field) }], { yfmt: n2, empty });
+    chart($('#ch-' + k), [{ name: 'Einzelner Lauf', color, scatter: true, pts: rs.map(m => ({ x: m.date, y: m[field], label: m.name })) }, { name: 'Ø 5 Läufe', color, pts: roll(rs, field) }], { yfmt: n2, empty, xr });
   }
   { const tl = inR(cardDates('tbl')).map(m => m.raw).sort((x, y) => y.start_date_local.localeCompare(x.start_date_local));
     $('#ch-tbl').innerHTML = tl.length ? actTable(tl, set) : '<div class="muted">Keine Einheiten im Zeitraum.</div>'; }
@@ -1372,10 +1367,12 @@ async function renderAna() {
 
 // Liniendiagramm mit Hover (eine y-Achse)
 function chart(el, series, o = {}) {
+  // o.xr = [von, bis]: X-Achse immer über den gewählten Zeitraum, Punkte außerhalb fallen weg
+  if (o.xr) { const [a, b] = o.xr.map(Number); series = series.map(s => Object.assign({}, s, { pts: s.pts.filter(p => +p.x >= a && +p.x <= b + 864e5 - 1) })); }
   const all = series.flatMap(s => s.pts.filter(p => p.y != null));
   if (!all.length) { el.innerHTML = `<div class="muted small" style="padding:30px 0;text-align:center">${o.empty || 'Keine Daten im Zeitraum.'}</div>`; return; }
   const cw = Math.round(el.clientWidth || 0), Wd = cw > 200 ? cw : (o.w || 560), H = o.h || (Wd < 500 ? 190 : 220), L = 40, R = 12, T = 10, B = 26;
-  const xs = all.map(p => +p.x), x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
+  const xs = all.map(p => +p.x), x0 = o.xr ? +o.xr[0] : Math.min(...xs), x1 = o.xr ? +o.xr[1] : Math.max(...xs) || x0 + 1;
   let y0 = Math.min(...all.map(p => p.y)), y1 = Math.max(...all.map(p => p.y)); if (o.dots || y0 > 0 && y0 / y1 < 0.5) y0 = Math.min(0, y0);
   const pad = (y1 - y0) * 0.08 || 1; y1 += pad; if (y0 !== 0) y0 -= pad;
   const X = v => L + (x1 === x0 ? (Wd - L - R) / 2 : (v - x0) / (x1 - x0) * (Wd - L - R)), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
