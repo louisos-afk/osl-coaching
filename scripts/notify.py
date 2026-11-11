@@ -153,6 +153,11 @@ def notify(target, title, body, url, tag=None):
     outbox.append((target, title, body, url, tag))
 
 
+# Wochenregel wie in den Apps: sichtbar bis Sonntag der laufenden Woche, Sonntag ab 18 Uhr die neue Woche
+if TODAY.weekday() == 6:
+    HORIZON = TODAY + dt.timedelta(days=7) if NOW.hour >= 18 else TODAY
+else:
+    HORIZON = TODAY + dt.timedelta(days=6 - TODAY.weekday())
 day_time = 7 <= NOW.hour < 22  # nachts keine Erinnerungen, Nachrichten immer
 
 for aid, name in athletes.items():
@@ -204,7 +209,8 @@ for aid, name in athletes.items():
     workouts = [e for e in evs if e.get("category") == "WORKOUT"]
     old_evs, new_evs, released = s.get("evs", {}), {}, []
     for e in workouts:
-        k, h, hidden = str(e["id"]), ev_hash(e), bool(e.get("hide_from_athlete"))
+        k, h = str(e["id"]), ev_hash(e)
+        hidden = bool(e.get("hide_from_athlete")) or ldate(e["start_date_local"]) > HORIZON
         new_evs[k] = [h, hidden]
         d = ldate(e["start_date_local"])
         if init or hidden or d < TODAY:
@@ -223,7 +229,7 @@ for aid, name in athletes.items():
         n = len(released)
         notify(aid, "Dein Plan für die neue Woche ist da 📅", f"{n} Workout{'s' if n != 1 else ''} ab Montag. Schau rein!", ath_url, "release")
 
-    visible_on = lambda d: [e for e in workouts if not e.get("hide_from_athlete") and ldate(e["start_date_local"]) == d]
+    visible_on = lambda d: [e for e in workouts if not e.get("hide_from_athlete") and ldate(e["start_date_local"]) == d <= HORIZON]
     acts_on = lambda d: [a for a in acts if ldate(a["start_date_local"]) == d]
 
     if not init and day_time:
