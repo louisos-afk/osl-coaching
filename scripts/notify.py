@@ -27,7 +27,7 @@ NOW = dt.datetime.fromisoformat(os.environ["FAKE_NOW"]).replace(tzinfo=TZ) if os
 TODAY = NOW.date()
 AUTH = "Basic " + base64.b64encode(f"API_KEY:{KEY}".encode()).decode()
 WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-FEEL = {1: "💪 Stark", 2: "🙂 Gut", 3: "😐 Normal", 4: "😕 Schwach", 5: "😫 Sehr schwach"}
+FEEL = {1: "Stark", 2: "Gut", 3: "Normal", 4: "Schwach", 5: "Sehr schwach"}
 
 if not VAPID and not DRY:
     print("VAPID_PRIVATE_KEY fehlt, nichts zu tun.")

@@ -14,7 +14,7 @@ const NAMES = new Set(['$', '$$', 'esc', 'LS', 'status', 'iv', 'pool', 'pad', 'y
   'sportSettings', 'events', 'activities', 'hasWatts', 'cachedPower', 'ensurePower', 'metrics', 'initials', 'openDialog', 'closeDialog',
   'isRace', 'raceInfo', 'downsample', 'chart', 'matchPlan', 'compliance', 'compColor', 'compPill', 'stepRange', 'compareSteps',
   'planVsActualHtml', 'formTxt', 'FEEL', 'feedbackPills', 'loadMessages',
-  'DATA_FOLDER', 'parseJson', 'VAPID_PUB', 'isIOS', 'isStandalone', 'b64u', 'pushReg', 'pushState', 'pushSave', 'pushEnable', 'pushDisable', 'mountPushCard',
+  'SVG', 'ICON', 'RACE_COL', 'prioTag', 'ZONE6', 'ZONE_COL', 'zones6', 'zoneTimes6', 'zoneLabel', 'FEEL_COL', 'feelTag', 'DATA_FOLDER', 'parseJson', 'VAPID_PUB', 'isIOS', 'isStandalone', 'b64u', 'pushReg', 'pushState', 'pushSave', 'pushEnable', 'pushDisable', 'mountPushCard',
   'economy', 'n1', 'ECO', 'ecoRuns', 'ecoKpis', 'ecoCards', 'powerCurveHtml']);
 
 const ast = acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'script', allowAwaitOutsideFunction: true });

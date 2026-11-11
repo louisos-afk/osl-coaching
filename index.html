@@ -250,6 +250,8 @@ input[type=date]{min-height:36px}
   #btnRefresh{font-size:0;gap:0}#btnRefresh::before{content:'↻';font-size:16px}
   .tbl td,.tbl th,table td,table th{padding-left:6px;padding-right:6px}
 }
+.ic{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none}
+.fdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:.05em}
 </style>
 </head>
 <body>
@@ -762,12 +764,12 @@ async function renderHome() {
     const sum = k => wk.reduce((s, m) => s + (m[k] || 0), 0);
     const thr = set.Run?.threshold_pace;
     $('#kpis').innerHTML = [
-      ['Fitness (CTL)', n0(w.ctl), '', `Ermüdung ${n0(w.atl)} · Form ${n0(w.ctl - w.atl)}`],
+      ['Fitness (CTL)', n0(w.ctl), '', `Belastung ${n0(w.atl)} · Form ${n0(w.ctl - w.atl)}`],
       ['TSS 7 Tage · Watt', n0(sum('pTSS')), '', set.Run?.ftp ? `CP ${set.Run.ftp} W` : '<span class="err">Lauf-CP fehlt</span>'],
       ['TSS 7 Tage · HR', n0(sum('hTSS')), '', `LTHR ${set.Run?.lthr || '–'} bpm`],
       ['Umfang 7 Tage', km(sum('dist')), 'km', fmtH(sum('sec'))],
       ['Schwellenpace', fmtPace(thr), '/km', thr ? `VDOT ≈ ${(vo2(thr * 60) / 0.88).toFixed(1)}` : ''],
-      race ? ['Nächster Wettkampf', Math.round((parseYmd(race.start_date_local) - parseYmd(to)) / 864e5), 'Tage', `<span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} · ${dShort(parseYmd(race.start_date_local))}${rf ? ` · Form ${formTxt(rf.tsb)}` : ''}`]
+      race ? ['Nächster Wettkampf', Math.round((parseYmd(race.start_date_local) - parseYmd(to)) / 864e5), 'Tage', `${prioTag(race)} ${esc(race.name)} · ${dShort(parseYmd(race.start_date_local))}${rf ? ` · Form ${formTxt(rf.tsb)}` : ''}`]
         : ['Nächster Wettkampf', '–', '', '<span class="muted">Im Kalender mit 🏁 eintragen</span>'],
       ...(recov ? [['Erholung', `<span class="dot" style="width:14px;height:14px;background:${AMPEL[recov.level]}"></span>`, ` ${AMPEL_TXT[recov.level]}`, esc(recov.reasons.join(' · '))]] : []),
     ].map(([l, v, u, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}<small>${u}</small></div><div class="d">${d}</div></div>`).join('');
@@ -825,7 +827,7 @@ async function renderCal() {
       for (const it of items) {
         if (it.ev && isRace(it.ev)) {
           const e = it.ev, r = raceInfo(e);
-          h += `<div class="ev race click" data-ev="${e.id}" data-drag="${e.id}" title="Wettkampf"><div class="t"><span class="prio">${r.prio}</span>🏁 ${esc(e.name || 'Wettkampf')}</div>
+          h += `<div class="ev race click" data-ev="${e.id}" data-drag="${e.id}" title="Wettkampf"><div class="t">${prioTag(r.prio)} ${esc(e.name || 'Wettkampf')}</div>
             <div class="m">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', r.goal && e.distance && sportOf(e.type) === 'Run' ? fmtPace(e.distance / r.goal) + '/km' : ''].filter(Boolean).join(' · ')}</div></div>`;
         } else if (it.ev) {
           const e = it.ev, sp = sportOf(e.type); T.pSec += e.moving_time || 0; T.pTss += e.icu_training_load || 0;
@@ -1125,6 +1127,26 @@ async function downloadEventFit(aid, e) {
 
 // =============== Wettkämpfe ===============
 const isRace = e => /^RACE_/.test(e.category || '');
+// =============== Icons (statt Emojis), Rennfarben, einheitliche Zonen ===============
+const SVG = (d, extra = '') => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
+const ICON = {
+  plan: SVG('<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14.5l2.2 2.2 4.3-4.4"/>'),
+  hist: SVG('<path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/>'),
+  ana: SVG('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  prof: SVG('<circle cx="12" cy="8" r="4"/><path d="M4 20.5c1.2-4 4.3-6 8-6s6.8 2 8 6"/>'),
+  rest: SVG('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/><path d="M15 3.5h3l-3 3.5h3"/>'),
+  race: SVG('<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>'),
+  bell: SVG('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
+};
+const RACE_COL = { A: '#c8f560', B: '#5aa9ff', C: '#a0a8b8' };
+const prioTag = e => { const p = typeof e === 'string' ? e : raceInfo(e).prio; return `<span class="prio" style="background:${RACE_COL[p] || RACE_COL.A}">${p}</span>`; };
+// Alle Zonen (Pace, Puls, Leistung) mit denselben 6 Namen; mehr als 6 Zonen werden oben zu Zone 5b zusammengefasst
+const ZONE6 = [['Zone 1', 'Regeneration'], ['Zone 2', 'Grundlage'], ['Zone 3', 'Tempo'], ['Zone 4', 'Schwelle'], ['Zone 5a', 'VO2max'], ['Zone 5b', 'Speed']];
+const ZONE_COL = ['#8a94a6', '#4f8cff', '#2fbf71', '#f5c84c', '#ff8a5c', '#ff4d5e'];
+function zones6(z) { if (!z?.length) return []; return z.length > 6 ? [...z.slice(0, 5), z[z.length - 1]] : z.slice(); }
+function zoneTimes6(t) { if (!t?.length) return null; const v = t.map(x => typeof x === 'object' ? x.secs || 0 : x || 0); return v.length > 6 ? [...v.slice(0, 5), v.slice(5).reduce((a, b) => a + b, 0)] : v; }
+const zoneLabel = (i, n) => n === 5 && i === 4 ? ['Zone 5', 'VO2max & Speed'] : ZONE6[i] || ['Zone ' + (i + 1), ''];
+
 function raceInfo(e) { const m = String(e.description || '').match(/^Zielzeit:\s*([\d:]+)/m); return { prio: (e.category || 'RACE_A').slice(5) || 'A', goal: m ? parseTime(m[1]) : null, notes: String(e.description || '').replace(/^Zielzeit:.*\n?/m, '').trim() }; }
 const RACE_DISTS = { Run: [[5000, '5 km'], [10000, '10 km'], [21097.5, 'Halbmarathon'], [42195, 'Marathon']], Ride: [[40000, '40 km'], [90000, '90 km'], [180000, '180 km']], Swim: [[1500, '1,5 km'], [1900, '1,9 km'], [3800, '3,8 km']] };
 async function raceDialog(aid, date, e) {
@@ -1271,7 +1293,7 @@ const PRESETS_R = [['4W', 28], ['3M', 91], ['6M', 182], ['1J', 365], ['2J', 730]
 const presetDates = p => { const d = PRESETS_R.find(x => x[0] === p)[1]; return [ymd(addDays(new Date(), -d + 1)), ymd(new Date())]; };
 function rangeDates() { const r = S.range; return r.preset ? presetDates(r.preset) : [r.from, r.to]; }
 // Jede Karte kann einen eigenen Zeitraum haben; ohne Angabe gilt der obere Zeitraum.
-const CARDS = { load: 'Trainingsbelastung pro Woche', fit: 'Fitness und Ermüdung', efW: 'Effizienz Leistung · Watt pro Herzschlag (NP / Ø HF)', efP: 'Effizienz Pace · Meter pro Herzschlag', tbl: 'Einheiten im Zeitraum' };
+const CARDS = { load: 'Trainingsbelastung pro Woche', fit: 'Fitness und Belastung', efW: 'Effizienz Leistung · Watt pro Herzschlag (NP / Ø HF)', efP: 'Effizienz Pace · Meter pro Herzschlag', tbl: 'Einheiten im Zeitraum' };
 function cardDates(k) { const c = LS.get('cardRange', {})[k]; if (!c) return rangeDates(); return c.preset ? presetDates(c.preset) : [c.from, c.to]; }
 function setCardRange(k, v) { const all = LS.get('cardRange', {}); if (v) all[k] = v; else delete all[k]; LS.set('cardRange', all); }
 function cardHead(k) {
@@ -1328,7 +1350,7 @@ async function renderAna() {
   if ($('#toThr')) $('#toThr').onclick = () => setTab('thr');
   formProjection(a.id).then(pr => { if (stale(a.id) || !$('#ch-proj')) return;
     if (!pr) { $('#ch-proj').innerHTML = '<div class="muted small">Keine Fitnessdaten.</div>'; return; }
-    chart($('#ch-proj'), [{ name: 'Fitness (CTL)', color: 'var(--s1)', pts: pr.pts.map(p => ({ x: p.x, y: p.ctl })) }, { name: 'Ermüdung (ATL)', color: 'var(--s2)', pts: pr.pts.map(p => ({ x: p.x, y: p.atl })) },
+    chart($('#ch-proj'), [{ name: 'Fitness 6 Wochen (CTL)', color: 'var(--s1)', pts: pr.pts.map(p => ({ x: p.x, y: p.ctl })) }, { name: 'Belastung 7 Tage (ATL)', color: 'var(--s2)', pts: pr.pts.map(p => ({ x: p.x, y: p.atl })) },
       { name: 'Form (TSB)', color: 'var(--s3)', pts: pr.pts.map(p => ({ x: p.x, y: p.tsb, label: pr.races.find(r => r.start_date_local.slice(0, 10) === ymd(p.x)) ? '🏁 Form' : null })) }], { yfmt: n0, w: 1100, h: 200 });
     $('#projInfo').innerHTML = pr.raceForm.length ? pr.raceForm.slice(0, 3).map(r => `🏁 ${esc(r.race.name)}: Form ${formTxt(r.tsb)}, Fitness ${n0(r.ctl)}`).join(' · ') + ' <span class="muted">(Form +5 bis +25 gilt als frisch)</span>' : 'Kein Wettkampf eingetragen, Prognose 6 Wochen'; });
   $$('.cr').forEach(s => s.onchange = () => { const k = s.dataset.k, v = s.value;
@@ -1338,7 +1360,7 @@ async function renderAna() {
   { const r = cardDates('load'), Wk = weeks(r, inR(r));
     chart($('#ch-load'), [{ name: 'TSS Watt', color: 'var(--s1)', pts: Wk.map(x => ({ x: x.x, y: x.p })) }, { name: 'TSS HR', color: 'var(--s2)', pts: Wk.map(x => ({ x: x.x, y: x.h })) }, { name: 'TSS Pace', color: 'var(--s3)', pts: Wk.map(x => ({ x: x.x, y: x.pa })) }], { dots: true, xfmt: d => `KW ab ${dShort(d)}`, yfmt: n0 }); }
   { const [f, t] = cardDates('fit'), wl = (well || []).filter(x => x.ctl != null && x.id >= f && x.id <= t);
-    chart($('#ch-fit'), [{ name: 'Fitness (CTL)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Ermüdung (ATL)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0 }); }
+    chart($('#ch-fit'), [{ name: 'Fitness 6 Wochen (CTL)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung 7 Tage (ATL)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0 }); }
   const roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
   for (const [k, field, color, empty] of [['efW', 'efW', 'var(--s1)', 'Keine Läufe mit Watt und HF im Zeitraum.'], ['efP', 'efPace', 'var(--s3)', 'Keine Läufe mit HF im Zeitraum.']]) {
     const rs = runsOf(inR(cardDates(k))).filter(m => m[field]).sort((p, q) => p.date - q.date);
@@ -1533,7 +1555,7 @@ async function mountPushCard(el, role) {
     install: 'Auf dem iPhone geht das nur in der installierten App: in Safari auf Teilen tippen, „Zum Home-Bildschirm“ wählen und die App dann von dort öffnen.',
     denied: 'Benachrichtigungen sind für diese App blockiert. Erlaube sie in den Einstellungen deines Geräts und öffne die App neu.',
     unsupported: 'Hier nicht verfügbar. Öffne die installierte App oder Chrome, Edge oder Safari.' }[st];
-  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b>🔔 Benachrichtigungen</b><div class="small muted" style="margin-top:4px">${txt}</div></div>
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b><span style="color:var(--accent)">${ICON.bell}</span> Benachrichtigungen</b><div class="small muted" style="margin-top:4px">${txt}</div></div>
     ${st === 'on' ? '<button class="btn sm" data-push="off">Aus</button>' : st === 'off' ? '<button class="btn pri sm" data-push="on">Aktivieren</button>' : ''}</div>
     ${st === 'on' ? '<div style="margin-top:10px"><button class="btn ghost sm" data-push="test">Test auf diesem Gerät</button></div>' : ''}<div class="small err" data-push-err></div></div>`;
   el.querySelectorAll('[data-push]').forEach(b => b.onclick = async () => {
@@ -1671,7 +1693,7 @@ async function renderTeam() {
       const cell = (l, v, c) => `<div><div class="small muted">${l}</div><div style="font-weight:600;font-size:17px;${c ? 'color:' + c : ''}">${v}</div></div>`;
       $('#tm-' + a.id).innerHTML = `<div class="g3" style="gap:10px">${cell('Fitness', n0(w.ctl))}${cell('Form', formTxt(w.ctl - w.atl))}${cell('TSS 7 Tage', n0(load7))}
         ${cell('Diese Woche', `${wk.filter(e => match[e.id]).length}/${wk.length}`)}${cell('Verpasst (7 T)', missed.length, missed.length ? 'var(--warn)' : '')}${cell('Ø Plan erfüllt', comps.length ? Math.round(comps.reduce((s, x) => s + x, 0) / comps.length) + ' %' : '–', comps.length ? compColor(comps.reduce((s, x) => s + x, 0) / comps.length) : '')}</div>
-        <div class="small t2" style="margin-top:10px">${race ? `🏁 <span class="prio">${raceInfo(race).prio}</span> ${esc(race.name)} in ${Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5)} Tagen` : 'Kein Wettkampf geplant'}${rec && rec.level > 1 ? ` · ${rec.reasons.join(', ')}` : ''}</div>`;
+        <div class="small t2" style="margin-top:10px">${race ? `🏁 ${prioTag(race)} ${esc(race.name)} in ${Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5)} Tagen` : 'Kein Wettkampf geplant'}${rec && rec.level > 1 ? ` · ${rec.reasons.join(', ')}` : ''}</div>`;
     } catch (e) { $('#tm-' + a.id).innerHTML = `<span class="err small">${esc(e.message)}</span>`; }
   }));
 }
@@ -1769,8 +1791,10 @@ async function thresholdSuggest(aid) {
 }
 
 // =============== Feedback (RPE, Gefühl, Kommentare) ===============
-const FEEL = { 1: '💪 Stark', 2: '🙂 Gut', 3: '😐 Normal', 4: '😕 Schwach', 5: '😫 Sehr schwach' };
-function feedbackPills(a) { return [a.icu_rpe ? `<span class="pill" title="Anstrengung (RPE)">RPE ${a.icu_rpe}</span>` : '', a.feel ? `<span class="pill" title="Gefühl">${FEEL[a.feel] || a.feel}</span>` : ''].join(''); }
+const FEEL = { 1: 'Stark', 2: 'Gut', 3: 'Normal', 4: 'Schwach', 5: 'Sehr schwach' };
+const FEEL_COL = { 1: '#2fbf71', 2: '#9bd84a', 3: '#f5c84c', 4: '#ff8a5c', 5: '#ff4d5e' };
+const feelTag = f => `<span class="fdot" style="background:${FEEL_COL[f]}"></span>${FEEL[f]}`;
+function feedbackPills(a) { return [a.icu_rpe ? `<span class="pill" title="Anstrengung (RPE)">RPE ${a.icu_rpe}</span>` : '', a.feel ? `<span class="pill" title="Gefühl">${feelTag(a.feel) || a.feel}</span>` : ''].join(''); }
 async function loadMessages(act) {
   const box = $('#actMsg'); if (!box) return;
   try {
