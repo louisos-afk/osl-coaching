@@ -209,7 +209,7 @@ async function renderPlan() {
   if (allRaces.length) h += `<h2 class="sec">Kommende Wettkämpfe</h2>${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
     return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:var(--accent)">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px"><span class="prio">${ri.prio}</span><span class="t">🏁 ${esc(r.name)}</span>
       <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
-  h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt sonntags jeweils die übernächste Woche frei.</div>`;
+  h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt jeden Sonntagabend die neue Woche frei.</div>`;
   $('#view').innerHTML = `<div id="pushHint"></div>` + h;
   // Einmaliger Hinweis, solange Benachrichtigungen aus sind
   if (!LS.get('pushHintOff', false)) pushState().then(st => { const el = $('#pushHint'); if (!el || !['off', 'install'].includes(st)) return;

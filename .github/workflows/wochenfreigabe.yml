@@ -1,9 +1,9 @@
 name: Wochenfreigabe
 
-# Jeden Sonntag: Athleten sehen geplante Workouts nur fuer die naechsten 2 Wochen.
+# Jeden Sonntagabend: Athleten bekommen die neue Woche. Sichtbar ist immer nur die laufende Woche.
 on:
   schedule:
-    - cron: "17 5 * * 0"   # Sonntag 05:17 UTC (06:17 Winterzeit, 07:17 Sommerzeit)
+    - cron: "7 17 * * 0"   # Sonntag 17:07 UTC (18:07 Winterzeit, 19:07 Sommerzeit)
   workflow_dispatch: {}
 
 permissions:

@@ -311,8 +311,10 @@ const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.get
 const parseYmd = s => { const [y, m, d] = s.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const monday = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(x, -((x.getDay() + 6) % 7)); };
-// Sichtbarkeit: Athlet sieht alles bis Sonntag in 14 Tagen ab dem letzten Sonntag (Freigabe jeden Sonntag)
-function horizon(d = new Date()) { const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(addDays(t, -t.getDay()), 14); }
+// Sichtbarkeit: Athlet sieht die laufende Woche bis Sonntag. Sonntag ab 18 Uhr wird die nächste Woche freigegeben.
+const RELEASE_HOUR = 18;
+function horizon(d = new Date()) { const t = new Date(d.getFullYear(), d.getMonth(), d.getDate()), wd = t.getDay();
+  return wd === 0 ? (d.getHours() >= RELEASE_HOUR ? addDays(t, 7) : t) : addDays(t, 7 - wd); }
 const hiddenFor = date => parseYmd(date) > horizon();
 async function syncVisibility() {
   const today = ymd(new Date()), out = [];
@@ -1373,7 +1375,7 @@ function renderSettings() {
         <div class="small muted">Der Key liegt nur in diesem Browser. Auf jedem neuen Gerät einmal eingeben.</div></div>
       <div id="pushCard"></div>
       <div class="card stack"><h3>Wochenfreigabe</h3>
-        <div class="t2">Athleten sehen geplante Workouts nur für die nächsten 2 Wochen. Jeden Sonntag wird die übernächste Woche freigegeben. Aktuell sichtbar bis <b>${dLong(horizon())}</b>.</div>
+        <div class="t2">Athleten sehen geplante Workouts immer nur für die laufende Woche. Jeden Sonntag ab 18 Uhr wird die neue Woche freigegeben. Aktuell sichtbar bis <b>${dLong(horizon())}</b>.</div>
         <div class="row"><button class="btn" id="syncVis">Jetzt abgleichen</button><span class="small muted" id="syncRes"></span></div>
         <div class="small muted">Später geplante Workouts legt die App automatisch versteckt an. Einzelne Workouts kannst du im Workout-Dialog früher freigeben.</div></div>
       <div class="card"><h3>Konten</h3><div class="tbl-wrap"><table>

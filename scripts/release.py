@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Wochenfreigabe: Athleten sehen geplante Workouts nur fuer die naechsten 2 Wochen.
+"""Wochenfreigabe: Athleten sehen geplante Workouts immer nur fuer die laufende Woche.
 
-Regel: Sichtbar ist alles bis einschliesslich Sonntag in 14 Tagen, gerechnet ab dem
-letzten Sonntag (heute, falls Sonntag). Alles danach wird mit hide_from_athlete versteckt.
+Regel (Zeit Europe/Berlin): Montag bis Samstag ist alles bis einschliesslich zum kommenden
+Sonntag sichtbar. Sonntag ab 18 Uhr wird die neue Woche (bis Sonntag in 7 Tagen) freigegeben.
+Alles danach wird mit hide_from_athlete versteckt.
 Aufruf: INTERVALS_API_KEY=... python3 release.py
 """
 import base64, datetime as dt, json, os, urllib.request
@@ -21,9 +22,13 @@ def api(method, path, body=None):
         return json.loads(r.read() or b"null")
 
 
-today = dt.date.today()
-last_sunday = today - dt.timedelta(days=(today.weekday() + 1) % 7)
-horizon = last_sunday + dt.timedelta(days=14)
+from zoneinfo import ZoneInfo
+now = dt.datetime.now(ZoneInfo("Europe/Berlin"))
+today = now.date()
+if today.weekday() == 6:  # Sonntag
+    horizon = today + dt.timedelta(days=7) if now.hour >= 18 else today
+else:
+    horizon = today + dt.timedelta(days=6 - today.weekday())
 me = api("GET", "athlete/0")
 athletes = {a["athlete_id"]: a.get("athlete_name") for a in api("GET", "athlete/0/athlete-summary.json") if a.get("athlete_id") != me["id"]}
 print(f"Heute {today}, sichtbar bis {horizon}")

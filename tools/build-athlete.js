@@ -8,7 +8,7 @@ const js = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'
 
 // Gemeinsame Bausteine (Rechnen, Workout-Modell, API, Diagramme). Reihenfolge wie in index.html.
 const NAMES = new Set(['$', '$$', 'esc', 'LS', 'status', 'iv', 'pool', 'pad', 'ymd', 'parseYmd', 'addDays', 'monday', 'MON', 'dShort', 'dLong',
-  'horizon', 'hiddenFor', 'fmtDur', 'fmtH', 'fmtPace', 'parseTime', 'km', 'n0', 'n2', 'vo2', 'pctMax', 'vdotOf', 'predict', 'speedAt', 'DISTS',
+  'RELEASE_HOUR', 'horizon', 'hiddenFor', 'fmtDur', 'fmtH', 'fmtPace', 'parseTime', 'km', 'n0', 'n2', 'vo2', 'pctMax', 'vdotOf', 'predict', 'speedAt', 'DISTS',
   'SPORTS', 'sportOf', 'EX_RE', 'TMODES', 'secOf', 'mmss', 'perOf', 'rng', 'stepText', 'LINE_RE', 'parseStep', 'workoutText', 'workoutDescription',
   'parseWorkout', 'thrFor', 'zoneBounds', 'HRZ_F', 'factor', 'flatten', 'totals', 'hrFracOf', 'powerModel', 'predictTSS', 'stepTargetText',
   'sportSettings', 'events', 'activities', 'hasWatts', 'cachedPower', 'ensurePower', 'metrics', 'initials', 'openDialog', 'closeDialog',

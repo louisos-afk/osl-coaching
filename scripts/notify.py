@@ -6,7 +6,7 @@ Liest mit dem Coach-Key die Daten aller Athleten, vergleicht mit dem zuletzt gem
 an die Geraete, die in den Apps Benachrichtigungen aktiviert haben (Eintrag "_push" im selben
 Ordner des jeweiligen Kontos).
 
-Athlet bekommt: Nachricht vom Coach, neues/geaendertes Workout, Plan-Freigabe am Sonntag,
+Athlet bekommt: Nachricht vom Coach, neues/geaendertes Workout, Plan-Freigabe am Sonntagabend,
   Morgen-Erinnerung, Feedback-Erinnerung nach dem Lauf.
 Coach bekommt: Nachricht vom Athleten, Lauf absolviert, Feedback abgegeben, Workout verpasst.
 
@@ -202,7 +202,7 @@ for aid, name in athletes.items():
 
     # Neue oder geaenderte Workouts -> Athlet (Freigabe am Sonntag zaehlt nicht einzeln)
     workouts = [e for e in evs if e.get("category") == "WORKOUT"]
-    old_evs, new_evs = s.get("evs", {}), {}
+    old_evs, new_evs, released = s.get("evs", {}), {}, []
     for e in workouts:
         k, h, hidden = str(e["id"]), ev_hash(e), bool(e.get("hide_from_athlete"))
         new_evs[k] = [h, hidden]
@@ -210,20 +210,23 @@ for aid, name in athletes.items():
         if init or hidden or d < TODAY:
             continue
         prev = old_evs.get(k)
-        if prev is None:
-            notify(aid, "Neues Workout", f"{day(d)}: {e.get('name')} · {ev_line(e)}", ath_url, f"ev-{k}")
+        if prev and prev[1] and TODAY.weekday() == 6:  # am Sonntag freigegeben: eine Sammelnachricht
+            released.append(e)
+            continue
+        if prev is None or prev[1]:
+            notify(aid, "Neues Workout", " · ".join(x for x in [f"{day(d)}: {e.get('name')}", ev_line(e)] if x), ath_url, f"ev-{k}")
         elif prev[0] != h:
-            notify(aid, "Workout geändert", f"{day(d)}: {e.get('name')} · {ev_line(e)}", ath_url, f"ev-{k}")
+            notify(aid, "Workout geändert", " · ".join(x for x in [f"{day(d)}: {e.get('name')}", ev_line(e)] if x), ath_url, f"ev-{k}")
     s["evs"] = new_evs
+    if released and not init and sent.get("release") != str(TODAY):
+        sent["release"] = str(TODAY)
+        n = len(released)
+        notify(aid, "Dein Plan für die neue Woche ist da 📅", f"{n} Workout{'s' if n != 1 else ''} ab Montag. Schau rein!", ath_url, "release")
 
     visible_on = lambda d: [e for e in workouts if not e.get("hide_from_athlete") and ldate(e["start_date_local"]) == d]
     acts_on = lambda d: [a for a in acts if ldate(a["start_date_local"]) == d]
 
     if not init and day_time:
-        # Sonntag: Plan freigegeben
-        if TODAY.weekday() == 6 and NOW.hour >= 8 and sent.get("release") != str(TODAY):
-            sent["release"] = str(TODAY)
-            notify(aid, "Dein Plan ist da 📅", "Die nächsten 2 Wochen sind freigegeben. Schau rein!", ath_url, "release")
         # Morgens: heutiges Workout
         if sent.get("morning") != str(TODAY):
             sent["morning"] = str(TODAY)
