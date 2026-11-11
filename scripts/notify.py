@@ -310,6 +310,8 @@ for aid, (f, it, data, changed) in subs_cache.items():
 
 if json.dumps(state, sort_keys=True) != state_before and not DRY:
     save_item(COACH, coach_folder, state_item, "_push_state", state)
-devices = {k: len(subs_for(k)[2].get("subs") or []) for k in [COACH, *athletes]}
-print(f"Angemeldete Geräte: Coach {devices[COACH]}, Athleten {[devices[a] for a in athletes]}")
+from urllib.parse import urlparse as _up
+def _dev(k):
+    return [f"{_up(x['endpoint']).hostname} ({(x.get('added') or '')[:16]})" for x in subs_for(k)[2].get("subs") or []]
+print(f"Angemeldete Geräte: Coach {_dev(COACH)}, Athleten {[_dev(a) for a in athletes]}")
 print(f"{NOW:%Y-%m-%d %H:%M}: {len(outbox)} Ereignisse, {sent_count} Pushes gesendet")
