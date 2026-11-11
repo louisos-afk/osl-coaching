@@ -313,5 +313,5 @@ if json.dumps(state, sort_keys=True) != state_before and not DRY:
 from urllib.parse import urlparse as _up
 def _dev(k):
     return [f"{_up(x['endpoint']).hostname} ({(x.get('added') or '')[:16]})" for x in subs_for(k)[2].get("subs") or []]
-print(f"Angemeldete Geräte: Coach {_dev(COACH)}, Athleten {[_dev(a) for a in athletes]}")
+print(f"Angemeldete Geräte: Coach {_dev(COACH)}, Athleten { {a[-3:]: _dev(a) for a in athletes} }")
 print(f"{NOW:%Y-%m-%d %H:%M}: {len(outbox)} Ereignisse, {sent_count} Pushes gesendet")
