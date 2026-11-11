@@ -860,20 +860,24 @@ async function renderCal() {
   });
 }
 // Schnell-Vorlagen: direkt im Kalender anpassen, ohne eigenes Workout in der Bibliothek
-function quickTemplates(sport) {
+// Planungsart je Athlet (Lauf): Dauerläufe und Intervalle jeweils nach Zeit oder Distanz
+const planPref = aid => Object.assign({ easy: 'dist', int: 'dist' }, athSet(aid, 'planUnits', {}));
+function quickTemplates(sport, pref = { easy: 'dist', int: 'dist' }) {
   const st = (dur, unit, lo, hi) => ({ dur, unit, mode: 'pct', lo, hi, note: '' }), B = (label, reps, ...steps) => ({ label, reps, steps });
+  const E = (km, min) => pref.easy === 'time' ? [min, 'm'] : [km, 'km'], I = (m, min) => pref.int === 'time' ? [min, 'm'] : [m, 'mtr'], TP = pref.int === 'time' ? [20, 'm'] : [5, 'km'];
   const T = {
-    Run: [['Easy Run', [B('', 1, st(10, 'km', 75, 85))]], ['Long Run', [B('', 1, st(18, 'km', 75, 82))]], ['Recovery Run', [B('', 1, st(6, 'km', 65, 77))]],
-      ['Easy + Steigerungen', [B('', 1, st(8, 'km', 75, 85)), B('Steigerungen', 6, st(20, 's', 112, 120), st(60, 's', 60, 75))]],
-      ['Tempo Run', [B('Warmup', 1, st(2, 'km', 75, 85)), B('Tempo', 1, st(5, 'km', 92, 96)), B('Cooldown', 1, st(2, 'km', 75, 85))]],
-      ['Intervalle', [B('Warmup', 1, st(15, 'm', 75, 85)), B('Intervalle', 5, st(1000, 'mtr', 104, 108), st(2, 'm', 60, 75)), B('Cooldown', 1, st(10, 'm', 75, 85))]]],
+    Run: [['Easy Run', [B('', 1, st(...E(10, 45), 75, 85))]], ['Long Run', [B('', 1, st(...E(18, 90), 75, 82))]], ['Recovery Run', [B('', 1, st(...E(6, 30), 65, 77))]],
+      ['Easy + Steigerungen', [B('', 1, st(...E(8, 40), 75, 85)), B('Steigerungen', 6, st(20, 's', 112, 120), st(60, 's', 60, 75))]],
+      ['Tempo Run', [B('Warmup', 1, st(...E(2, 15), 75, 85)), B('Tempo', 1, st(...TP, 92, 96)), B('Cooldown', 1, st(...E(2, 10), 75, 85))]],
+      ['Intervalle', [B('Warmup', 1, st(...E(2, 15), 75, 85)), B('Intervalle', 5, st(...I(1000, 4), 104, 108), st(2, 'm', 60, 75)), B('Cooldown', 1, st(...E(2, 10), 75, 85))]],
+      ['Kurze Intervalle', [B('Warmup', 1, st(...E(2, 15), 75, 85)), B('Intervalle', 10, st(...I(400, 1.5), 108, 115), st(90, 's', 60, 75)), B('Cooldown', 1, st(...E(2, 10), 75, 85))]]],
     Ride: [['Grundlage', [B('', 1, st(90, 'm', 56, 75))]], ['Sweet Spot', [B('Warmup', 1, st(15, 'm', 56, 70)), B('Sweet Spot', 3, st(10, 'm', 88, 94), st(5, 'm', 50, 60)), B('Cooldown', 1, st(10, 'm', 50, 60))]],
       ['Intervalle', [B('Warmup', 1, st(15, 'm', 56, 70)), B('Intervalle', 5, st(4, 'm', 106, 115), st(3, 'm', 45, 55)), B('Cooldown', 1, st(10, 'm', 50, 60))]]],
     Swim: [['Locker', [B('', 1, st(2000, 'mtr', 75, 85))]], ['Intervalle', [B('Einschwimmen', 1, st(400, 'mtr', 75, 85)), B('Intervalle', 10, st(100, 'mtr', 98, 102), st(15, 's', 50, 50)), B('Ausschwimmen', 1, st(200, 'mtr', 75, 85))]]],
   }[sport] || [];
   const list = T.map(([name, blocks]) => ({ name, sport, blocks }));
   if (SPORTS[sport].strength) list.push({ name: 'Krafttraining', sport, dur: 45, ex: [{ name: 'Kniebeuge', sets: 3, reps: 8, load: '' }] });
-  else list.push({ name: 'Leer', sport, blocks: [B('', 1, sport === 'Swim' ? st(100, 'mtr', 75, 85) : st(10, 'm', 75, 85))] });
+  else list.push({ name: 'Leer', sport, blocks: [B('', 1, sport === 'Swim' ? st(100, 'mtr', 75, 85) : sport === 'Run' ? st(...E(10, 45), 75, 85) : st(10, 'm', 75, 85))] });
   return list;
 }
 // Name aus der Hauptlänge ableiten, solange der Coach ihn nicht selbst geändert hat ("Easy Run 12 km")
@@ -890,7 +894,7 @@ async function planDialog(date, wid) {
     <div class="row" style="margin:12px 0"><label class="f">Athlet<select id="plAth">${S.athletes.map(x => `<option value="${esc(x.id)}" ${x.id === a?.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
       <label class="f">Datum<input type="date" id="plDate" value="${date}"></label></div>
     <div class="sport-tabs" id="plSports">${Object.entries(SPORTS).map(([k, x]) => `<button class="chip ${k === sport ? 'on' : ''}" data-s="${k}">${x.icon} ${x.label}</button>`).join('')}</div>
-    <div class="small t2" style="margin:10px 0 6px">Schnell erstellen</div><div class="row" id="plQuick" style="gap:6px;flex-wrap:wrap"></div>
+    <div class="small t2" style="margin:10px 0 6px">Schnell erstellen</div><div id="plPref" class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px"></div><div class="row" id="plQuick" style="gap:6px;flex-wrap:wrap"></div>
     <div id="plLen" class="row" style="margin-top:12px;gap:8px;align-items:center"></div>
     <details id="plLib" style="margin-top:14px"${pre ? ' open' : ''}><summary class="small t2" style="cursor:pointer;padding:6px 0">📚 Aus deiner Bibliothek wählen</summary>
     <input type="search" id="plQ" placeholder="🔍 Workout suchen …" style="width:100%;margin:6px 0"><div id="plList" class="pl-list"></div></details>
@@ -904,7 +908,7 @@ async function planDialog(date, wid) {
       const aid = $('#plAth').value, set = await sportSettings(aid).catch(() => null), t = totals(edit, set);
       $('#plPrev').innerHTML = `<div class="small t2">${[t.sec ? 'ca. ' + fmtH(t.sec) : '', t.m ? km(t.m) + ' km' : ''].filter(Boolean).join(' · ')}</div>${SPORTS[edit.sport].strength ? '' : tssLine(predictTSS(edit, set, edit.sport === 'Run' ? await powerModel(aid) : null))}`; };
     const pick = (w, isQuick) => {
-      edit = JSON.parse(JSON.stringify(w)); edit.id = isQuick ? 'q' + Date.now().toString(36) : w.id; base = w.name; auto = isQuick;
+      edit = JSON.parse(JSON.stringify(w)); edit.id = isQuick ? 'q' + Date.now().toString(36) : w.id; base = w.name; auto = isQuick; qName = isQuick ? w.name : null;
       if (auto) edit.name = autoName(base, edit);
       $$('#plQuick .chip, #plList .lib-item').forEach(x => x.classList.toggle('on', x.dataset.k === (isQuick ? 'q:' + w.name : 'l:' + w.id)));
       const o = { plain: true, athleteId: $('#plAth').value,
@@ -925,8 +929,21 @@ async function planDialog(date, wid) {
         mountEditor($('#plEd'), edit, $('#plEd')._o); prev(); };
       $('#plLenV').oninput = upd; $('#plLenU').onchange = upd;
     };
+    let qName = null;
+    const prefRow = () => {
+      const aid = $('#plAth').value, pr = planPref(aid), box = $('#plPref');
+      if (sport !== 'Run') { box.innerHTML = ''; return; }
+      const seg = (k, l) => `<span class="small t2">${l}</span><div class="seg" data-pk="${k}">${[['time', 'Zeit'], ['dist', 'Distanz']].map(([v, t]) => `<button data-v="${v}" class="${pr[k] === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+      box.innerHTML = seg('easy', 'Dauerläufe') + seg('int', 'Intervalle') + `<span class="small muted">für ${esc(S.athletes.find(x => x.id === aid)?.name || '')} gespeichert</span>`;
+      $$('#plPref .seg button').forEach(bt => bt.onclick = async () => {
+        const k = bt.closest('.seg').dataset.pk, next = Object.assign(planPref(aid), { [k]: bt.dataset.v });
+        try { await setAthSet(aid, 'planUnits', next); } catch (e) { status(e.message, true); }
+        fill(); const q = quickTemplates(sport, next).find(w => w.name === qName); if (q && auto) pick(q, true);
+      });
+    };
     const fill = () => {
-      const qt = quickTemplates(sport);
+      prefRow();
+      const qt = quickTemplates(sport, planPref($('#plAth').value));
       $('#plQuick').innerHTML = qt.map(w => `<button class="chip" data-k="q:${esc(w.name)}">${esc(w.name)}</button>`).join('');
       $$('#plQuick .chip').forEach((c, i) => c.onclick = () => pick(qt[i], true));
       const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -937,8 +954,9 @@ async function planDialog(date, wid) {
     };
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
     $('#plQ').oninput = e => { q = e.target.value; fill(); };
-    $('#plAth').onchange = prev; fill();
-    if (pre) pick(pre, false); else pick(quickTemplates(sport)[0], true);
+    $('#plAth').onchange = () => { fill(); const q = quickTemplates(sport, planPref($('#plAth').value)).find(w => w.name === qName); if (q && auto) pick(q, true); else prev(); };
+    fill();
+    if (pre) pick(pre, false); else pick(quickTemplates(sport, planPref($('#plAth').value))[0], true);
     $('#plRace').onclick = () => raceDialog($('#plAth').value, $('#plDate').value);
     $('#plFile').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; const aid = $('#plAth').value, d = $('#plDate').value;
       $('#plFileRes').innerHTML = '<span class="spin"></span>';
