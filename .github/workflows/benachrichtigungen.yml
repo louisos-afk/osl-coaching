@@ -5,7 +5,12 @@ name: Benachrichtigungen
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Testbenachrichtigung an alle angemeldeten Geräte senden"
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -27,6 +32,7 @@ jobs:
         env:
           INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          TEST_PUSH: ${{ inputs.test && '1' || '0' }}
         run: python3 scripts/notify.py
       # GitHub pausiert Zeitpläne nach 60 Tagen ohne Repo-Aktivität; das hält den Workflow aktiv.
       - name: Zeitplan aktiv halten

@@ -261,6 +261,10 @@ for aid, name in athletes.items():
     s["fbask"] = sorted(fb_asked & {str(a["id"]) for a in acts})
     s["ready"] = True
 
+if os.environ.get("TEST_PUSH") == "1":  # manueller Testlauf aus GitHub (Run workflow, Haken "Test")
+    for k in [COACH, *athletes]:
+        notify(k, "OSL-Coaching ✓", "Benachrichtigungen funktionieren. Ab jetzt kommen hier Nachrichten und Workouts an.", APP + ("index.html" if k == COACH else "athlete.html"), "test")
+
 # ---------- Senden ----------
 subs_cache = {}
 
