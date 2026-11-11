@@ -325,10 +325,11 @@ const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Ok
 const dShort = d => `${d.getDate()}. ${MON[d.getMonth()]}`;
 const dLong = d => `${d.getDate()}. ${MON[d.getMonth()]} ${d.getFullYear()}`;
 function fmtDur(s) { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`; }
-function fmtH(s) { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}` : `${m} min`; }
+function fmtH(s) { const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}min` : `${m} min`; }
 function fmtPace(ms, per = 1000) { if (!ms || ms <= 0 || !isFinite(ms)) return '–'; const s = Math.round(per / ms); return `${Math.floor(s / 60)}:${pad(s % 60)}`; }
 function parseTime(str) { const p = String(str).trim().split(':').map(Number); if (!str || p.some(isNaN)) return NaN; return p.reduce((a, v) => a * 60 + v, 0); }
-const km = m => (m / 1000).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// Nachkommastellen: Coach-App 1, Athleten-App setzt globalThis.KM_DEC = 2
+const km = m => { const d = globalThis.KM_DEC || 1; return (m / 1000).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }); };
 const n0 = v => v == null || !isFinite(v) ? '–' : Math.round(v).toLocaleString('de-DE');
 const n2 = v => v == null || !isFinite(v) ? '–' : v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
