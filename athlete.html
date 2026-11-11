@@ -1060,19 +1060,43 @@ async function renderAna() {
   chart($('#anaFit'), [{ name: 'Fitness (6 Wochen)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung (7 Tage)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0 });
   for (const [el, k, c] of [['#anaEfP', 'efPace', 'var(--s3)'], ['#anaEfW', 'efW', 'var(--s1)']]) { const rs = runs.filter(r => r[k]);
     chart($(el), [{ name: 'Einzelner Lauf', color: c, scatter: true, pts: rs.map(r => ({ x: r.date, y: r[k], label: r.name })) }, { name: 'Ø 5 Läufe', color: c, pts: roll(rs, k) }], { yfmt: n2, empty: 'Keine Daten im Zeitraum.' }); }
-  $('#anaFocus').innerHTML = focusRadar(acts);
+  $('#anaFocus').innerHTML = '<div class="small muted"><span class="spin"></span> Berechne Zeit in den Pace-Zonen …</div>';
+  paceZoneTimes(acts, set.Run, (d, n) => { const el = $('#anaFocus .small'); if (el) el.innerHTML = `<span class="spin"></span> Berechne Zeit in den Pace-Zonen … ${d}/${n}`; })
+    .then(pz => { if ($('#anaFocus')) $('#anaFocus').innerHTML = focusRadar(acts, pz); });
   ecoCards($('#anaEco'), acts, 'stack');
   powerCurveHtml(id).then(h => { if ($('#anaPc')) $('#anaPc').innerHTML = h; });
 }
 
+// Zeit in den Pace-Zonen je Lauf aus dem Geschwindigkeitsverlauf (Sekunden je Zone), im Gerät zwischengespeichert
+async function paceZoneTimes(acts, R, onProgress) {
+  const out = {}; if (!R?.threshold_pace || !R.pace_zones?.length) return out;
+  const thr = R.threshold_pace, z = R.pace_zones, sig = thr.toFixed(3) + ':' + z.join(',');
+  const runs = acts.filter(a => sportOf(a.type) === 'Run' && a.moving_time > 300), need = [];
+  for (const a of runs) { const c = LS.get(`pz.${a.id}`, null); if (c && c.s === sig) out[a.id] = c.t; else need.push(a); }
+  let done = 0;
+  await pool(need, 4, async a => {
+    try {
+      const st = await iv('GET', `activity/${a.id}/streams?types=velocity_smooth,time`);
+      const v = (st || []).find(x => x.type === 'velocity_smooth')?.data || [], tm = (st || []).find(x => x.type === 'time')?.data || [];
+      const t = z.map(() => 0);
+      for (let i = 0; i < v.length; i++) {
+        const dt = tm.length > i && i ? Math.min(10, tm[i] - tm[i - 1]) : 1, sp = v[i];
+        if (!(sp > 1) || !(dt > 0)) continue; // Stehen und Gehen nicht zählen
+        const pct = sp / thr * 100; let k = z.findIndex(u => pct <= u); if (k < 0) k = z.length - 1; t[k] += dt;
+      }
+      if (t.some(x => x)) { LS.set(`pz.${a.id}`, { s: sig, t }); out[a.id] = t; }
+    } catch {}
+    done++; onProgress && onProgress(done, need.length);
+  });
+  return out;
+}
 // Trainingsfokus: Zeit in den Zonen je Fähigkeit, intensive Minuten zählen mehr; stärkster Bereich = 100
-function focusRadar(acts) {
+function focusRadar(acts, pz = {}) {
   const AX = [['Grundlage', [0, 1], 1], ['Tempo', [2], 2.5], ['Schwelle', [3], 4], ['VO2max', [4], 7], ['Speed', [5], 12]];
   const tot = [0, 0, 0, 0, 0, 0]; let n = 0, src = '';
   for (const a of acts) { if (sportOf(a.type) !== 'Run') continue;
-    const t = zoneTimes6(a.pace_zone_times) || zoneTimes6(a.gap_zone_times) || zoneTimes6(a.icu_hr_zone_times); if (!t) continue;
-    src = src || (a.pace_zone_times ? 'Pace' : a.gap_zone_times ? 'Pace (GAP)' : 'Puls'); n++; t.forEach((x, i) => tot[Math.min(i, 5)] += x); }
-  if (!n) return '<div class="muted small">Keine Zonendaten im Zeitraum.</div>';
+    const t = zoneTimes6(pz[a.id] || a.pace_zone_times); if (!t) continue; n++; t.forEach((x, i) => tot[Math.min(i, 5)] += x); }
+  if (!n) return '<div class="muted small">Keine Pace-Daten im Zeitraum.</div>';
   const raw = AX.map(([, z, w]) => z.reduce((s, i) => s + tot[i], 0) * w), mx = Math.max(...raw) || 1, val = raw.map(x => Math.round(x / mx * 100));
   const mins = AX.map(([, z]) => Math.round(z.reduce((s, i) => s + tot[i], 0) / 60));
   const W = 300, c = W / 2, R = 96, pt = (i, r) => { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; return [c + r * Math.cos(a), c + 8 + r * Math.sin(a)]; };
@@ -1085,7 +1109,7 @@ function focusRadar(acts) {
     ${AX.map((_, i) => { const [x, y] = pt(i, R); return `<line x1="${c}" y1="${c + 8}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="rg"/>`; }).join('')}
     <polygon points="${shape}" class="rs"/>${val.map((v, i) => { const [x, y] = pt(i, Math.max(6, R * v / 100)); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" class="rd"/>`; }).join('')}
     ${labels}</svg>
-    <div class="small muted">Wie stark du jede Fähigkeit im Zeitraum trainiert hast, aus deiner Zeit in den ${src}-Zonen (${n} Läufe). Intensive Minuten zählen mehr, der stärkste Bereich ist 100.</div>`;
+    <div class="small muted">Wie stark du jede Fähigkeit im Zeitraum trainiert hast, aus deiner Zeit in den Pace-Zonen (${n} Läufe). Intensive Minuten zählen mehr, der stärkste Bereich ist 100.</div>`;
 }
 
 // ---------- Profil ----------
