@@ -146,6 +146,7 @@ dialog.wide{max-width:980px;max-height:92vh}
 .sport-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
 .chip{border:1px solid var(--line2);background:var(--card);padding:6px 12px;border-radius:99px;cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;gap:6px}
 .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--text)}
+.pl-list{max-height:210px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px}
 .lib-item{padding:9px 10px;border-radius:9px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;border:1px solid transparent}
 .lib-item:hover{background:var(--card2)}
 .lib-item.on{background:var(--card2);border-color:var(--line2)}
@@ -858,30 +859,98 @@ async function renderCal() {
     try { await iv('DELETE', `athlete/${a.id}/events/${b.dataset.del}`); renderCal(); } catch (e) { status(e.message, true); }
   });
 }
+// Schnell-Vorlagen: direkt im Kalender anpassen, ohne eigenes Workout in der Bibliothek
+function quickTemplates(sport) {
+  const st = (dur, unit, lo, hi) => ({ dur, unit, mode: 'pct', lo, hi, note: '' }), B = (label, reps, ...steps) => ({ label, reps, steps });
+  const T = {
+    Run: [['Easy Run', [B('', 1, st(10, 'km', 75, 85))]], ['Long Run', [B('', 1, st(18, 'km', 75, 82))]], ['Recovery Run', [B('', 1, st(6, 'km', 65, 77))]],
+      ['Easy + Steigerungen', [B('', 1, st(8, 'km', 75, 85)), B('Steigerungen', 6, st(20, 's', 112, 120), st(60, 's', 60, 75))]],
+      ['Tempo Run', [B('Warmup', 1, st(2, 'km', 75, 85)), B('Tempo', 1, st(5, 'km', 92, 96)), B('Cooldown', 1, st(2, 'km', 75, 85))]],
+      ['Intervalle', [B('Warmup', 1, st(15, 'm', 75, 85)), B('Intervalle', 5, st(1000, 'mtr', 104, 108), st(2, 'm', 60, 75)), B('Cooldown', 1, st(10, 'm', 75, 85))]]],
+    Ride: [['Grundlage', [B('', 1, st(90, 'm', 56, 75))]], ['Sweet Spot', [B('Warmup', 1, st(15, 'm', 56, 70)), B('Sweet Spot', 3, st(10, 'm', 88, 94), st(5, 'm', 50, 60)), B('Cooldown', 1, st(10, 'm', 50, 60))]],
+      ['Intervalle', [B('Warmup', 1, st(15, 'm', 56, 70)), B('Intervalle', 5, st(4, 'm', 106, 115), st(3, 'm', 45, 55)), B('Cooldown', 1, st(10, 'm', 50, 60))]]],
+    Swim: [['Locker', [B('', 1, st(2000, 'mtr', 75, 85))]], ['Intervalle', [B('Einschwimmen', 1, st(400, 'mtr', 75, 85)), B('Intervalle', 10, st(100, 'mtr', 98, 102), st(15, 's', 50, 50)), B('Ausschwimmen', 1, st(200, 'mtr', 75, 85))]]],
+  }[sport] || [];
+  const list = T.map(([name, blocks]) => ({ name, sport, blocks }));
+  if (SPORTS[sport].strength) list.push({ name: 'Krafttraining', sport, dur: 45, ex: [{ name: 'Kniebeuge', sets: 3, reps: 8, load: '' }] });
+  else list.push({ name: 'Leer', sport, blocks: [B('', 1, sport === 'Swim' ? st(100, 'mtr', 75, 85) : st(10, 'm', 75, 85))] });
+  return list;
+}
+// Name aus der Hauptlänge ableiten, solange der Coach ihn nicht selbst geändert hat ("Easy Run 12 km")
+// Hauptteil = erster Abschnitt mit genau einem Schritt, wenn das Workout nur daraus besteht (oder "X + Steigerungen")
+function mainStep(w, base) { const b0 = (w.blocks || [])[0]; return b0 && b0.reps === 1 && b0.steps.length === 1 && (w.blocks.length === 1 || (base || '').includes('+')) ? b0.steps[0] : null; }
+function autoName(base, w) {
+  const st = mainStep(w, base), u = st && { km: ' km', m: ' min', mtr: ' m' }[st.unit];
+  return u ? `${base.replace(/\s+\d+([.,]\d+)?\s*(km|min|m)$/, '')} ${String(st.dur).replace('.', ',')}${u}` : base;
+}
 async function planDialog(date, wid) {
-  const a = cur(); const pre = S.lib.find(w => w.id === wid);
-  let sport = pre ? pre.sport : 'Run';
+  const a = cur(), pre = S.lib.find(w => w.id === wid);
+  let sport = pre ? pre.sport : 'Run', edit = null, base = '', auto = false, q = '';
   openDialog(`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Workout planen</h2><button class="btn sm" id="plRace">🏁 Stattdessen Wettkampf</button></div>
     <div class="row" style="margin:12px 0"><label class="f">Athlet<select id="plAth">${S.athletes.map(x => `<option value="${esc(x.id)}" ${x.id === a?.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
       <label class="f">Datum<input type="date" id="plDate" value="${date}"></label></div>
-    <div class="sport-tabs" id="plSports">${Object.entries(SPORTS).map(([k, s]) => `<button class="chip ${k === sport ? 'on' : ''}" data-s="${k}">${s.icon} ${s.label}</button>`).join('')}</div>
-    <select id="plW" size="7" style="width:100%"></select><div id="plPrev" style="margin-top:12px"></div>
+    <div class="sport-tabs" id="plSports">${Object.entries(SPORTS).map(([k, x]) => `<button class="chip ${k === sport ? 'on' : ''}" data-s="${k}">${x.icon} ${x.label}</button>`).join('')}</div>
+    <div class="small t2" style="margin:10px 0 6px">Schnell erstellen</div><div class="row" id="plQuick" style="gap:6px;flex-wrap:wrap"></div>
+    <div id="plLen" class="row" style="margin-top:12px;gap:8px;align-items:center"></div>
+    <details id="plLib" style="margin-top:14px"${pre ? ' open' : ''}><summary class="small t2" style="cursor:pointer;padding:6px 0">📚 Aus deiner Bibliothek wählen</summary>
+    <input type="search" id="plQ" placeholder="🔍 Workout suchen …" style="width:100%;margin:6px 0"><div id="plList" class="pl-list"></div></details>
+    <div id="plEd" style="margin-top:14px"></div><div id="plPrev" style="margin-top:8px"></div>
     <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"><span class="small t2">Oder Workout-Datei (.fit, .zwo, .erg, .mrc) direkt in den Kalender laden:</span>
       <label class="btn sm">📂 Datei wählen<input type="file" id="plFile" accept="${FILE_ACCEPT}" hidden></label><span class="small muted" id="plFileRes"></span></div>
-    <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="plOk">In Kalender legen</button></div>`, () => {
-    const fill = () => { const list = S.lib.filter(w => w.sport === sport); $('#plW').innerHTML = list.map(w => `<option value="${esc(w.id)}" ${w.id === wid ? 'selected' : ''}>${esc(w.name)}</option>`).join(''); if (!$('#plW').value && list[0]) $('#plW').value = list[0].id; prev(); };
-    const prev = async () => { const w = S.lib.find(x => x.id === $('#plW').value); if (!w) { $('#plPrev').innerHTML = '<div class="muted">Keine Workouts in dieser Sportart.</div>'; return; }
-      const set = await sportSettings($('#plAth').value).catch(() => null); const t = totals(w, set);
-      $('#plPrev').innerHTML = `<pre>${esc(workoutText(w))}</pre><div class="small t2" style="margin-top:6px">${t.sec ? 'ca. ' + fmtH(t.sec) : ''}${t.m ? ' · ' + km(t.m) + ' km' : ''}</div>${tssLine(predictTSS(w, set, w.sport === 'Run' ? await powerModel($('#plAth').value) : null))}`; };
+    <div class="row" style="margin-top:16px;justify-content:space-between;gap:10px"><label class="row small t2"><input type="checkbox" id="plSaveLib">Auch in Bibliothek speichern</label>
+      <div class="row"><button class="btn" onclick="closeDialog()">Abbrechen</button><button class="btn pri" id="plOk" disabled>In Kalender legen</button></div></div>`, () => {
+    $('#dlg').classList.add('wide');
+    const prev = async () => { if (!edit) { $('#plPrev').innerHTML = ''; return; }
+      const aid = $('#plAth').value, set = await sportSettings(aid).catch(() => null), t = totals(edit, set);
+      $('#plPrev').innerHTML = `<div class="small t2">${[t.sec ? 'ca. ' + fmtH(t.sec) : '', t.m ? km(t.m) + ' km' : ''].filter(Boolean).join(' · ')}</div>${SPORTS[edit.sport].strength ? '' : tssLine(predictTSS(edit, set, edit.sport === 'Run' ? await powerModel(aid) : null))}`; };
+    const pick = (w, isQuick) => {
+      edit = JSON.parse(JSON.stringify(w)); edit.id = isQuick ? 'q' + Date.now().toString(36) : w.id; base = w.name; auto = isQuick;
+      if (auto) edit.name = autoName(base, edit);
+      $$('#plQuick .chip, #plList .lib-item').forEach(x => x.classList.toggle('on', x.dataset.k === (isQuick ? 'q:' + w.name : 'l:' + w.id)));
+      const o = { plain: true, athleteId: $('#plAth').value,
+        onName: () => { auto = false; },
+        onChange: () => { if (auto) { edit.name = autoName(base, edit); const n = $('#plEd [data-k=name]'); if (n && document.activeElement !== n) n.value = edit.name; }
+          const v = $('#plLenV'), ms = mainStep(edit, base); if (v && ms && document.activeElement !== v) { v.value = ms.dur; $('#plLenU').value = ms.unit; } prev(); } };
+      $('#plEd')._o = o; mountEditor($('#plEd'), edit, o);
+      $('#plOk').disabled = false; prev(); lenRow();
+    };
+    // Großes Längenfeld für Vorlagen mit einem Hauptteil (Easy Run 12 km, Grundlage 90 min …)
+    const lenRow = () => {
+      const st = edit && mainStep(edit, base), box = $('#plLen');
+      if (!st) { box.innerHTML = ''; return; }
+      box.innerHTML = `<b style="min-width:58px">Länge</b><input type="number" id="plLenV" step="any" min="0" inputmode="decimal" value="${st.dur}" style="width:110px;font-size:20px;font-weight:700">
+        <select id="plLenU">${Object.entries(SPORTS[edit.sport].units).map(([k, l]) => `<option value="${k}" ${k === st.unit ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+      const upd = () => { st.dur = parseFloat($('#plLenV').value.replace(',', '.')) || 0; st.unit = $('#plLenU').value;
+        if (auto) edit.name = autoName(base, edit);
+        mountEditor($('#plEd'), edit, $('#plEd')._o); prev(); };
+      $('#plLenV').oninput = upd; $('#plLenU').onchange = upd;
+    };
+    const fill = () => {
+      const qt = quickTemplates(sport);
+      $('#plQuick').innerHTML = qt.map(w => `<button class="chip" data-k="q:${esc(w.name)}">${esc(w.name)}</button>`).join('');
+      $$('#plQuick .chip').forEach((c, i) => c.onclick = () => pick(qt[i], true));
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const list = S.lib.filter(w => (words.length ? true : w.sport === sport) && words.every(x => w.name.toLowerCase().includes(x)));
+      $('#plList').innerHTML = list.map(w => { const t = totals(w, null); return `<div class="lib-item" data-k="l:${esc(w.id)}" data-id="${esc(w.id)}"><span>${words.length ? SPORTS[w.sport].icon + ' ' : ''}${esc(w.name)}</span><small>${t.sec ? fmtH(t.sec) : ''}</small></div>`; }).join('')
+        || `<div class="muted small" style="padding:8px">${words.length ? 'Nichts gefunden.' : 'Keine Workouts in dieser Sportart.'}</div>`;
+      $$('#plList .lib-item').forEach(el => el.onclick = () => pick(S.lib.find(w => w.id === el.dataset.id), false));
+    };
     $$('#plSports .chip').forEach(c => c.onclick = () => { sport = c.dataset.s; $$('#plSports .chip').forEach(x => x.classList.toggle('on', x === c)); fill(); });
-    $('#plW').onchange = prev; $('#plAth').onchange = prev; fill();
+    $('#plQ').oninput = e => { q = e.target.value; fill(); };
+    $('#plAth').onchange = prev; fill();
+    if (pre) pick(pre, false); else pick(quickTemplates(sport)[0], true);
     $('#plRace').onclick = () => raceDialog($('#plAth').value, $('#plDate').value);
     $('#plFile').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; const aid = $('#plAth').value, d = $('#plDate').value;
       $('#plFileRes').innerHTML = '<span class="spin"></span>';
       try { const e = await importToCalendar(aid, f, sport === 'WeightTraining' ? 'Run' : sport, d); closeDialog(); status(`„${esc(e.name || f.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal(); }
       catch (err) { $('#plFileRes').innerHTML = `<span class="err">${esc(err.message)}</span>`; } };
-    $('#plOk').onclick = async () => { const w = S.lib.find(x => x.id === $('#plW').value), aid = $('#plAth').value, d = $('#plDate').value; if (!w || !d) return;
-      try { await planWorkout(aid, w, d); closeDialog(); status(`„${esc(w.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal(); } catch (e) { alert(e.message); } };
+    $('#plOk').onclick = async () => { const aid = $('#plAth').value, d = $('#plDate').value; if (!edit || !d) return;
+      if (!edit.name.trim()) return alert('Bitte einen Namen eingeben.');
+      $('#plOk').disabled = true;
+      try {
+        if ($('#plSaveLib').checked) { const c = await createWorkout(Object.assign(JSON.parse(JSON.stringify(edit)), { id: undefined })); edit.id = c.id; }
+        await planWorkout(aid, edit, d); closeDialog(); status(`„${esc(edit.name)}“ am ${dShort(parseYmd(d))} geplant`); if (S.view === 'cal' && aid === S.cur) renderCal();
+      } catch (e) { alert(e.message); $('#plOk').disabled = false; } };
   });
 }
 async function planWorkout(aid, w, date) {
@@ -893,14 +962,18 @@ async function planWorkout(aid, w, date) {
 
 // =============== Workout-Bibliothek & Builder ===============
 function renderLib() {
-  const list = S.lib.filter(w => w.sport === S.libSport);
+  const words = (S.libQ || '').toLowerCase().split(/\s+/).filter(Boolean);
+  // Suche läuft über alle Sportarten
+  const list = S.lib.filter(w => (words.length || w.sport === S.libSport) && words.every(x => w.name.toLowerCase().includes(x)));
   if (!list.some(w => w.id === S.sel)) S.sel = list[0]?.id || null;
   $('#view').innerHTML = `<div class="sport-tabs">${Object.entries(SPORTS).map(([k, s]) => `<button class="chip ${k === S.libSport ? 'on' : ''}" data-s="${k}">${s.icon} ${s.label} <small class="muted">${S.lib.filter(w => w.sport === k).length}</small></button>`).join('')}</div>
     <div class="side-main"><div class="card"><div class="row" style="justify-content:space-between;margin-bottom:8px"><h3 style="margin:0">${SPORTS[S.libSport].label}</h3><div class="row" style="gap:6px"><label class="btn sm" title="Workout-Datei importieren (.fit, .zwo, .erg, .mrc)">📂 Import<input type="file" id="wFile" accept="${FILE_ACCEPT}" hidden></label><button class="btn sm pri" id="wNew">+ Neu</button></div></div>
-      ${list.map(w => { const t = totals(w, null); return `<div class="lib-item ${w.id === S.sel ? 'on' : ''}" data-id="${esc(w.id)}"><span>${esc(w.name)}</span><small>${t.sec ? fmtH(t.sec) : ''}</small></div>`; }).join('') || '<div class="muted small">Noch keine Workouts.</div>'}</div>
+      <input type="search" id="libQ" placeholder="🔍 Workout suchen (alle Sportarten) …" value="${esc(S.libQ || '')}" style="width:100%;margin-bottom:8px">
+      ${list.map(w => { const t = totals(w, null); return `<div class="lib-item ${w.id === S.sel ? 'on' : ''}" data-id="${esc(w.id)}"><span>${words.length ? SPORTS[w.sport].icon + ' ' : ''}${esc(w.name)}</span><small>${t.sec ? fmtH(t.sec) : ''}</small></div>`; }).join('') || (words.length ? '<div class="muted small">Nichts gefunden.</div>' : '<div class="muted small">Noch keine Workouts.</div>')}</div>
       <div id="editor"></div></div>`;
   $$('.sport-tabs .chip').forEach(c => c.onclick = () => { S.libSport = c.dataset.s; renderLib(); });
-  $$('.lib-item').forEach(el => el.onclick = () => { S.sel = el.dataset.id; renderLib(); });
+  $$('.lib-item').forEach(el => el.onclick = () => { S.sel = el.dataset.id; const w = S.lib.find(x => x.id === S.sel); if (w) S.libSport = w.sport; renderLib(); });
+  $('#libQ').oninput = e => { S.libQ = e.target.value; const pos = e.target.selectionStart; renderLib(); const i = $('#libQ'); i.focus(); i.setSelectionRange(pos, pos); };
   $('#wFile').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; status('<span class="spin"></span> Importiere …');
     try { const w = await importToLibrary(f, S.libSport === 'WeightTraining' ? 'Run' : S.libSport); S.libSport = w.sport; S.sel = w.id; status(`„${esc(w.name)}“ importiert`); renderLib(); }
     catch (err) { status('Import fehlgeschlagen: ' + err.message, true); } };
