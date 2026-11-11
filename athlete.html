@@ -274,7 +274,14 @@ h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--
 .item:hover{background:var(--card)}
 .item .t{font-weight:600}
 .item .m{color:var(--text2);font-size:12px;width:100%;padding-left:15px}
-.rest{color:var(--muted);font-size:13px;padding:6px 8px}
+.rest{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;background:linear-gradient(90deg,rgba(122,167,255,.14),rgba(122,167,255,.03));border:1px dashed rgba(122,167,255,.35);color:#a9c4ff;font-size:14px;font-weight:600}
+.rest .ri{font-size:18px;line-height:1}
+.rest .rs{color:var(--muted);font-weight:400;font-size:12px;margin-left:auto}
+.dayrow.past .rest{opacity:.55}
+.restcard{display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;background:linear-gradient(135deg,rgba(122,167,255,.22),rgba(122,167,255,.05));border:1px solid rgba(122,167,255,.4)}
+.restcard .ri{font-size:34px;line-height:1}
+.restcard .nm{font-size:18px;font-weight:700;color:#cfdcff}
+.restcard .meta{color:var(--text2);font-size:13px;margin-top:3px}
 .steps{display:flex;flex-direction:column;gap:8px}
 .sblock{border:1px solid var(--line2);border-radius:12px;overflow:hidden}
 .sblock .sh{padding:8px 12px;background:var(--card2);font-weight:600;display:flex;justify-content:space-between}
@@ -750,7 +757,7 @@ async function renderPlan() {
   h += `<h2 class="sec">Heute · ${WD[today.getDay()]} ${dShort(today)}</h2>`;
   for (const e of todayRace) { const r = raceInfo(e);
     h += `<div class="wcard click" data-ev="${e.id}" style="border-color:var(--accent)"><div class="nm">🏁 Heute ist Wettkampf: ${esc(e.name)}</div><div class="meta">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', 'Priorität ' + r.prio].filter(Boolean).join(' · ')}</div><div class="small" style="color:var(--accent);margin-top:6px">Viel Erfolg! Details ›</div></div>`; }
-  if (!todayEv.length && !todayAct.length && !todayRace.length) h += `<div class="wcard" style="cursor:default"><div class="nm">😌 Ruhetag</div><div class="meta">Erholung gehört zum Training.</div></div>`;
+  if (!todayEv.length && !todayAct.length && !todayRace.length) h += `<div class="restcard"><div class="ri">🛌</div><div><div class="nm">Heute ist Ruhetag</div><div class="meta">Beine hoch, gut essen, früh schlafen. Erholung gehört zum Training.</div></div></div>`;
   for (const e of todayEv) { const w = wOf(e), a = match[e.id];
     h += a ? `<div class="wcard done click" data-act="${esc(a.id)}"><div class="nm"><span class="check">✓</span>${esc(e.name)}</div>
         <div class="meta">Erledigt: ${actMeta(a)}</div><div class="row" style="gap:6px;margin-top:8px">${compPill(compliance(e, a))}${feedbackPills(a) || '<span class="pill" style="color:var(--accent)">Wie war\'s? Feedback geben ›</span>'}</div></div>`
@@ -764,8 +771,8 @@ async function renderPlan() {
     const k = ymd(d); if (k === t) continue;
     const wkStart = ymd(monday(d)); if (wkStart !== wk) { wk = wkStart; h += `<h2 class="sec">${wkStart === ymd(mon) ? 'Diese Woche' : wkStart === ymd(addDays(mon, 7)) ? 'Nächste Woche' : 'Woche ab ' + dShort(parseYmd(wkStart))}</h2>`; }
     const de = evs.filter(e => e.start_date_local.slice(0, 10) === k), da = acts.filter(a => a.start_date_local.slice(0, 10) === k && !doneIds.has(a.id));
-    h += `<div class="dayrow"><div class="dd"><b>${d.getDate()}.</b>${WD[d.getDay()]}</div><div>`;
-    if (!de.length && !da.length) h += `<div class="rest">Ruhetag</div>`;
+    h += `<div class="dayrow${k < t ? ' past' : ''}"><div class="dd"><b>${d.getDate()}.</b>${WD[d.getDay()]}</div><div>`;
+    if (!de.length && !da.length) h += `<div class="rest"><span class="ri">🛌</span>Ruhetag<span class="rs">Erholung</span></div>`;
     for (const e of de) {
       if (isRace(e)) { h += `<div class="item click" data-ev="${e.id}"><span class="prio">${raceInfo(e).prio}</span><span class="t">🏁 ${esc(e.name)}</span><span class="m">${e.distance ? km(e.distance) + ' km' : ''}</span></div>`; continue; }
       const a = match[e.id], past = k < t;
