@@ -306,4 +306,6 @@ for aid, (f, it, data, changed) in subs_cache.items():
 
 if json.dumps(state, sort_keys=True) != state_before and not DRY:
     save_item(COACH, coach_folder, state_item, "_push_state", state)
+devices = {k: len(subs_for(k)[2].get("subs") or []) for k in [COACH, *athletes]}
+print(f"Angemeldete Geräte: Coach {devices[COACH]}, Athleten {[devices[a] for a in athletes]}")
 print(f"{NOW:%Y-%m-%d %H:%M}: {len(outbox)} Ereignisse, {sent_count} Pushes gesendet")
