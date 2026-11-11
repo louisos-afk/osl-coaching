@@ -265,13 +265,6 @@ body{display:block;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
 h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:22px 4px 8px;font-weight:600}
 .race-banner{display:flex;align-items:center;gap:12px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:14px;padding:12px 14px;margin-bottom:14px}
 .race-banner .big{font-size:26px;font-weight:700;color:var(--accent);line-height:1}
-.race-swipe{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:6px}
-.race-swipe::-webkit-scrollbar{display:none}
-.race-swipe .race-banner{flex:0 0 100%;scroll-snap-align:start;margin-bottom:0;cursor:pointer;box-sizing:border-box}
-.race-swipe .race-banner .prio{margin-left:auto}
-.race-dots{display:flex;justify-content:center;gap:6px;margin-bottom:14px}
-.race-dots i{width:6px;height:6px;border-radius:50%;background:var(--line2)}
-.race-dots i.on{background:var(--accent)}
 .wcard{background:linear-gradient(180deg,var(--card),var(--bg2));border:1px solid var(--line);border-radius:16px;padding:16px;cursor:pointer;margin-bottom:10px}
 .wcard:hover{border-color:var(--line2)}
 .wcard .nm{font-size:18px;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -665,6 +658,61 @@ function chart(el, series, o = {}) {
   const hit = $('.hit', el); hit.onmousemove = move; hit.ontouchstart = e => move(e.touches[0]);
   hit.onmouseleave = () => { tip.style.display = 'none'; xh.setAttribute('visibility', 'hidden'); hl.innerHTML = ''; };
 }
+const DATA_FOLDER = 'OSL-Coaching Daten';
+const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
+const VAPID_PUB = 'BP7PaH9wep6GdsUNzAcFS6Jr4W-nHleIDaYUX0F4CtXFiBJsI6rWNZDhhxGznuGeKMGHwpCbetR_wbkf-Er2Qeo';
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function b64u(t) { const b = atob((t + '='.repeat((4 - t.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+async function pushReg() { return 'serviceWorker' in navigator ? navigator.serviceWorker.getRegistration() : null; }
+async function pushState() {
+  if (isIOS() && !isStandalone()) return 'install';
+  if (!('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  const reg = await pushReg(); if (!reg) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  return (await reg.pushManager.getSubscription()) && Notification.permission === 'granted' ? 'on' : 'off';
+}
+async function pushSave(change) {
+  const folders = (await iv('GET', 'athlete/0/folders')) || [];
+  let f = folders.find(x => x.type === 'FOLDER' && x.name === DATA_FOLDER);
+  if (!f) f = await iv('POST', 'athlete/0/folders', { type: 'FOLDER', name: DATA_FOLDER });
+  const it = (f.children || []).find(x => x.name === '_push'), data = it ? parseJson(it.description) : {};
+  data.subs = data.subs || []; change(data);
+  const body = { name: '_push', type: 'Other', description: JSON.stringify(data) };
+  if (it) await iv('PUT', `athlete/0/workouts/${it.id}`, body); else await iv('POST', 'athlete/0/workouts', Object.assign({ folder_id: f.id }, body));
+}
+async function pushEnable(role) {
+  if ((await Notification.requestPermission()) !== 'granted') throw new Error('Benachrichtigungen wurden nicht erlaubt.');
+  const reg = await pushReg();
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUB) });
+  const j = sub.toJSON();
+  await pushSave(d => { d.subs = d.subs.filter(x => x.endpoint !== j.endpoint); d.subs.push({ endpoint: j.endpoint, keys: j.keys, role, device: navigator.userAgent.slice(0, 90), added: new Date().toISOString() }); });
+}
+async function pushDisable() {
+  const reg = await pushReg(), sub = reg && await reg.pushManager.getSubscription(); if (!sub) return;
+  const ep = sub.endpoint; await sub.unsubscribe(); await pushSave(d => { d.subs = d.subs.filter(x => x.endpoint !== ep); });
+}
+async function mountPushCard(el, role) {
+  if (!el) return;
+  const st = await pushState().catch(() => 'unsupported');
+  const what = role === 'coach' ? 'Nachrichten und Feedback deiner Athleten, absolvierte Läufe und verpasste Workouts.' : 'Nachrichten vom Coach, neue oder geänderte Workouts, deinen Plan am Sonntag, eine Erinnerung morgens und nach dem Lauf.';
+  const txt = { on: 'Aktiv auf diesem Gerät. Du bekommst: ' + what, off: 'Bekomme ' + what,
+    install: 'Auf dem iPhone geht das nur in der installierten App: in Safari auf Teilen tippen, „Zum Home-Bildschirm“ wählen und die App dann von dort öffnen.',
+    denied: 'Benachrichtigungen sind für diese App blockiert. Erlaube sie in den Einstellungen deines Geräts und öffne die App neu.',
+    unsupported: 'Hier nicht verfügbar. Öffne die installierte App oder Chrome, Edge oder Safari.' }[st];
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b>🔔 Benachrichtigungen</b><div class="small muted" style="margin-top:4px">${txt}</div></div>
+    ${st === 'on' ? '<button class="btn sm" data-push="off">Aus</button>' : st === 'off' ? '<button class="btn pri sm" data-push="on">Aktivieren</button>' : ''}</div>
+    ${st === 'on' ? '<div style="margin-top:10px"><button class="btn ghost sm" data-push="test">Test auf diesem Gerät</button></div>' : ''}<div class="small err" data-push-err></div></div>`;
+  el.querySelectorAll('[data-push]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      if (b.dataset.push === 'on') await pushEnable(role);
+      else if (b.dataset.push === 'off') await pushDisable();
+      else { (await pushReg()).showNotification('OSL-Coaching', { body: 'So sehen deine Benachrichtigungen aus. 👍', icon: 'icons/icon-192.png' }); b.disabled = false; return; }
+      mountPushCard(el, role);
+    } catch (e) { el.querySelector('[data-push-err]').textContent = e.message; b.disabled = false; }
+  });
+}
 function matchPlan(evs, acts) {
   const map = {}, used = new Set();
   for (const a of acts || []) if (a.paired_event_id) { map[a.paired_event_id] = a; used.add(a.id); }
@@ -743,8 +791,15 @@ async function init() {
   try { S.me = await iv('GET', 'athlete/0'); }
   catch (e) { status(''); return login(e.message); }
   status(''); $('#who').textContent = S.me.name || '';
-  nav(S.view);
+  nav(S.view); openFromHash();
 }
+// Benachrichtigung angetippt: athlete.html#act=<id> öffnet die Aktivität direkt
+async function openFromHash() {
+  const m = location.hash.match(/act=([\w-]+)/); if (!m) return;
+  history.replaceState(null, '', location.pathname);
+  try { openAct(await iv('GET', `activity/${m[1]}`)); } catch {}
+}
+addEventListener('hashchange', () => S.me && openFromHash());
 function login(err) {
   $('#nav').style.display = 'none';
   $('#view').innerHTML = `<div class="card stack" style="margin-top:40px">
@@ -779,16 +834,11 @@ async function renderPlan() {
   } catch (e) { $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
   const horizon = ymd(addDays(today, 21));
   evs = evs.filter(e => visible(e) && e.start_date_local.slice(0, 10) <= horizon); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
+  const race = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local))[0];
   const todayRace = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) === t), todayEv = evs.filter(e => e.start_date_local.slice(0, 10) === t && !isRace(e)), todayAct = acts.filter(a => a.start_date_local.slice(0, 10) === t && !doneIds.has(a.id));
   let h = '';
-  // Alle Wettkämpfe der nächsten 12 Monate oben als Wischkarten
-  const allRaces = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) > t).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
-  if (allRaces.length) {
-    h += `<div class="race-swipe" id="raceSwipe">${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
-      return `<div class="race-banner click" data-ev="${r.id}"><div class="big">${d}</div><div><div class="small t2">${d === 1 ? 'Tag' : 'Tage'} bis</div><b>🏁 ${esc(r.name)}</b><div class="small t2">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</div></div><span class="prio">${ri.prio}</span></div>`; }).join('')}</div>`;
-    if (allRaces.length > 1) h += `<div class="race-dots" id="raceDots">${allRaces.map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</div>`;
-    else h += '<div style="height:8px"></div>';
-  }
+  if (race && !todayRace.length) { const r = raceInfo(race), d = Math.round((parseYmd(race.start_date_local) - parseYmd(t)) / 864e5);
+    h += `<div class="race-banner click" data-ev="${race.id}"><div class="big">${d}</div><div><div class="small t2">${d === 1 ? 'Tag' : 'Tage'} bis</div><b>🏁 ${esc(race.name)}</b><div class="small t2">${dLong(parseYmd(race.start_date_local))}${r.goal ? ' · Ziel ' + fmtDur(r.goal) : ''}</div></div></div>`; }
   h += `<h2 class="sec">Heute · ${WD[today.getDay()]} ${dShort(today)}</h2>`;
   for (const e of todayRace) { const r = raceInfo(e);
     h += `<div class="wcard click" data-ev="${e.id}" style="border-color:var(--accent)"><div class="nm">🏁 Heute ist Wettkampf: ${esc(e.name)}</div><div class="meta">${[e.distance ? km(e.distance) + ' km' : '', r.goal ? 'Ziel ' + fmtDur(r.goal) : '', 'Priorität ' + r.prio].filter(Boolean).join(' · ')}</div><div class="small" style="color:var(--accent);margin-top:6px">Viel Erfolg! Details ›</div></div>`; }
@@ -818,10 +868,18 @@ async function renderPlan() {
     for (const a of da) h += `<div class="item click" data-act="${esc(a.id)}"><span class="t">✓ ${esc(a.name || a.type)}</span><span class="m">${actMeta(a)}</span></div>`;
     h += '</div></div>';
   }
+  // Alle kommenden Wettkämpfe
+  const allRaces = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) > t).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
+  if (allRaces.length) h += `<h2 class="sec">Kommende Wettkämpfe</h2>${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
+    return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:var(--accent)">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px"><span class="prio">${ri.prio}</span><span class="t">🏁 ${esc(r.name)}</span>
+      <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
   h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt sonntags jeweils die übernächste Woche frei.</div>`;
-  $('#view').innerHTML = h;
-  const sw = $('#raceSwipe'), dots = $('#raceDots');
-  if (sw && dots) sw.addEventListener('scroll', () => { const i = Math.round(sw.scrollLeft / sw.clientWidth); [...dots.children].forEach((x, j) => x.classList.toggle('on', j === i)); }, { passive: true });
+  $('#view').innerHTML = `<div id="pushHint"></div>` + h;
+  // Einmaliger Hinweis, solange Benachrichtigungen aus sind
+  if (!LS.get('pushHintOff', false)) pushState().then(st => { const el = $('#pushHint'); if (!el || !['off', 'install'].includes(st)) return;
+    el.innerHTML = `<div class="card click" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;border-color:rgba(200,245,96,.4)"><span style="font-size:22px">🔔</span><div style="flex:1"><b>Benachrichtigungen einschalten</b><div class="small muted">Nachrichten vom Coach und neue Workouts direkt aufs Handy.</div></div><button class="icon-x" aria-label="Ausblenden">×</button></div>`;
+    el.querySelector('.icon-x').onclick = ev => { ev.stopPropagation(); LS.set('pushHintOff', true); el.innerHTML = ''; };
+    el.querySelector('.card').onclick = () => nav('prof'); }).catch(() => {});
 }
 const actMeta = a => [a.distance ? km(a.distance) + ' km' : '', a.moving_time ? fmtDur(a.moving_time) + (a.moving_time >= 3600 ? ' h' : ' min') : '', sportOf(a.type) === 'Run' && a.distance && a.moving_time ? fmtPace(a.distance / a.moving_time) + '/km' : '', a.average_heartrate ? Math.round(a.average_heartrate) + ' bpm' : ''].filter(Boolean).join(' · ');
 
@@ -989,6 +1047,7 @@ async function renderProf() {
     <div class="kpi"><div class="l">Schwellenpace</div><div class="v">${fmtPace(thr)}<small>/km</small></div><div class="d">${v ? 'VDOT ≈ ' + v.toFixed(1) : ''}</div></div>
     <div class="kpi"><div class="l">Schwellenpuls</div><div class="v">${R.lthr || '–'}<small>bpm</small></div><div class="d">max ${R.max_hr || '–'}</div></div>
     ${cp ? `<div class="kpi"><div class="l">Critical Power</div><div class="v">${cp}<small>W</small></div><div class="d">${S.me?.icu_weight ? (cp / S.me.icu_weight).toFixed(2).replace('.', ',') + ' W/kg' : 'Laufleistung'}</div></div>` : ''}</div>`;
+  h += `<div id="pushCard" style="margin-top:12px"></div>`;
   if (thr && R.pace_zones) h += `<h2 class="sec">Pace-Zonen</h2><div class="card">${ztab(R.pace_zones.map((u, i) => [R.pace_zone_names?.[i] || 'Zone ' + (i + 1), '', zr(R.pace_zones, i, p => fmtPace(thr * p / 100)) + ' /km']))}</div>`;
   if (cp) { const pz = R.power_zones?.length ? R.power_zones : [55, 75, 90, 105, 120, 150, 999], pn = R.power_zone_names?.length ? R.power_zone_names : ['Erholung', 'Grundlage', 'Tempo', 'Schwelle', 'VO2max', 'Anaerob', 'Sprint'];
     h += `<h2 class="sec">Leistungszonen <span style="text-transform:none;letter-spacing:0">(CP ${cp} W)</span></h2><div class="card">${ztab(pz.map((u, i) => { const lo = i ? Math.round(cp * pz[i - 1] / 100) + 1 : 0, up = Math.round(cp * u / 100); return ['Zone ' + (i + 1), pn[i], u >= 999 ? `> ${lo - 1} W` : `${lo}–${up} W`]; }))}</div>`; }
@@ -998,6 +1057,7 @@ async function renderProf() {
   if (rs.length) h += `<h2 class="sec">Wettkämpfe</h2>${rs.map(r => `<div class="item click" data-ev="${r.id}"><span class="prio">${raceInfo(r).prio}</span><span class="t">${esc(r.name)}</span><span class="m">${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${raceInfo(r).goal ? ' · Ziel ' + fmtDur(raceInfo(r).goal) : ''}</span></div>`).join('')}`;
   h += `<div style="text-align:center;margin-top:24px"><button class="btn danger" id="logout">Abmelden</button></div>`;
   $('#view').innerHTML = h;
+  mountPushCard($('#pushCard'), 'athlete');
   $('#logout').onclick = () => { if (confirm('Von diesem Gerät abmelden?')) { LS.del('key'); location.reload(); } };
 }
 

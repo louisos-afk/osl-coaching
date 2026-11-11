@@ -1,0 +1,36 @@
+name: Benachrichtigungen
+
+# Alle 5 Minuten: neue Nachrichten, Workouts, Läufe und Erinnerungen als Push an die Apps.
+# GitHub startet geplante Läufe oft einige Minuten später, das ist normal.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: benachrichtigungen
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Abhängigkeit installieren
+        run: pip install --quiet pywebpush==2.5.0
+      - name: Prüfen und senden
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+        run: python3 scripts/notify.py
+      # GitHub pausiert Zeitpläne nach 60 Tagen ohne Repo-Aktivität; das hält den Workflow aktiv.
+      - name: Zeitplan aktiv halten
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/benachrichtigungen.yml/enable" || true

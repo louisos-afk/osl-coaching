@@ -25,3 +25,12 @@ iPhone: Seite in Safari öffnen, Teilen, „Zum Home-Bildschirm“. Android: Chr
 - `index.html`: die komplette App (eine Datei, keine Abhängigkeiten)
 - `scripts/release.py`: Freigabe-Skript (Python-Standardbibliothek)
 - `manifest.webmanifest`, `sw.js`, `icons/`: Web-App für den Home-Bildschirm
+
+## Benachrichtigungen
+
+- In der Athleten-App unter **Profil**, in der Coach-App unter **Einstellungen** auf „Aktivieren“ tippen. Auf dem iPhone geht das nur in der installierten App (iOS 16.4 oder neuer).
+- Jedes Gerät legt seine Empfänger-Adresse im eigenen intervals-Konto ab (Ordner „OSL-Coaching Daten“, Eintrag `_push`).
+- `scripts/notify.py` läuft alle 5 Minuten über `.github/workflows/benachrichtigungen.yml`, merkt sich den Stand in `_push_state` in der Coach-Bibliothek und schickt:
+  - an Athleten: Nachricht vom Coach, neues oder geändertes Workout, Plan-Freigabe am Sonntag, Morgen-Erinnerung, Feedback-Erinnerung 2 h nach dem Lauf
+  - an den Coach: Nachricht oder Feedback vom Athleten, absolvierter Lauf, verpasstes Workout vom Vortag
+- Benötigte Secrets: `INTERVALS_API_KEY` und `VAPID_PRIVATE_KEY`. Der öffentliche Schlüssel steht als `VAPID_PUB` in `index.html`.

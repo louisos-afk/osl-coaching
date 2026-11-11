@@ -127,8 +127,15 @@ async function init() {
   try { S.me = await iv('GET', 'athlete/0'); }
   catch (e) { status(''); return login(e.message); }
   status(''); $('#who').textContent = S.me.name || '';
-  nav(S.view);
+  nav(S.view); openFromHash();
 }
+// Benachrichtigung angetippt: athlete.html#act=<id> öffnet die Aktivität direkt
+async function openFromHash() {
+  const m = location.hash.match(/act=([\w-]+)/); if (!m) return;
+  history.replaceState(null, '', location.pathname);
+  try { openAct(await iv('GET', `activity/${m[1]}`)); } catch {}
+}
+addEventListener('hashchange', () => S.me && openFromHash());
 function login(err) {
   $('#nav').style.display = 'none';
   $('#view').innerHTML = `<div class="card stack" style="margin-top:40px">
@@ -203,7 +210,12 @@ async function renderPlan() {
     return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:var(--accent)">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px"><span class="prio">${ri.prio}</span><span class="t">🏁 ${esc(r.name)}</span>
       <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
   h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt sonntags jeweils die übernächste Woche frei.</div>`;
-  $('#view').innerHTML = h;
+  $('#view').innerHTML = `<div id="pushHint"></div>` + h;
+  // Einmaliger Hinweis, solange Benachrichtigungen aus sind
+  if (!LS.get('pushHintOff', false)) pushState().then(st => { const el = $('#pushHint'); if (!el || !['off', 'install'].includes(st)) return;
+    el.innerHTML = `<div class="card click" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;border-color:rgba(200,245,96,.4)"><span style="font-size:22px">🔔</span><div style="flex:1"><b>Benachrichtigungen einschalten</b><div class="small muted">Nachrichten vom Coach und neue Workouts direkt aufs Handy.</div></div><button class="icon-x" aria-label="Ausblenden">×</button></div>`;
+    el.querySelector('.icon-x').onclick = ev => { ev.stopPropagation(); LS.set('pushHintOff', true); el.innerHTML = ''; };
+    el.querySelector('.card').onclick = () => nav('prof'); }).catch(() => {});
 }
 const actMeta = a => [a.distance ? km(a.distance) + ' km' : '', a.moving_time ? fmtDur(a.moving_time) + (a.moving_time >= 3600 ? ' h' : ' min') : '', sportOf(a.type) === 'Run' && a.distance && a.moving_time ? fmtPace(a.distance / a.moving_time) + '/km' : '', a.average_heartrate ? Math.round(a.average_heartrate) + ' bpm' : ''].filter(Boolean).join(' · ');
 
@@ -371,6 +383,7 @@ async function renderProf() {
     <div class="kpi"><div class="l">Schwellenpace</div><div class="v">${fmtPace(thr)}<small>/km</small></div><div class="d">${v ? 'VDOT ≈ ' + v.toFixed(1) : ''}</div></div>
     <div class="kpi"><div class="l">Schwellenpuls</div><div class="v">${R.lthr || '–'}<small>bpm</small></div><div class="d">max ${R.max_hr || '–'}</div></div>
     ${cp ? `<div class="kpi"><div class="l">Critical Power</div><div class="v">${cp}<small>W</small></div><div class="d">${S.me?.icu_weight ? (cp / S.me.icu_weight).toFixed(2).replace('.', ',') + ' W/kg' : 'Laufleistung'}</div></div>` : ''}</div>`;
+  h += `<div id="pushCard" style="margin-top:12px"></div>`;
   if (thr && R.pace_zones) h += `<h2 class="sec">Pace-Zonen</h2><div class="card">${ztab(R.pace_zones.map((u, i) => [R.pace_zone_names?.[i] || 'Zone ' + (i + 1), '', zr(R.pace_zones, i, p => fmtPace(thr * p / 100)) + ' /km']))}</div>`;
   if (cp) { const pz = R.power_zones?.length ? R.power_zones : [55, 75, 90, 105, 120, 150, 999], pn = R.power_zone_names?.length ? R.power_zone_names : ['Erholung', 'Grundlage', 'Tempo', 'Schwelle', 'VO2max', 'Anaerob', 'Sprint'];
     h += `<h2 class="sec">Leistungszonen <span style="text-transform:none;letter-spacing:0">(CP ${cp} W)</span></h2><div class="card">${ztab(pz.map((u, i) => { const lo = i ? Math.round(cp * pz[i - 1] / 100) + 1 : 0, up = Math.round(cp * u / 100); return ['Zone ' + (i + 1), pn[i], u >= 999 ? `> ${lo - 1} W` : `${lo}–${up} W`]; }))}</div>`; }
@@ -380,6 +393,7 @@ async function renderProf() {
   if (rs.length) h += `<h2 class="sec">Wettkämpfe</h2>${rs.map(r => `<div class="item click" data-ev="${r.id}"><span class="prio">${raceInfo(r).prio}</span><span class="t">${esc(r.name)}</span><span class="m">${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${raceInfo(r).goal ? ' · Ziel ' + fmtDur(raceInfo(r).goal) : ''}</span></div>`).join('')}`;
   h += `<div style="text-align:center;margin-top:24px"><button class="btn danger" id="logout">Abmelden</button></div>`;
   $('#view').innerHTML = h;
+  mountPushCard($('#pushCard'), 'athlete');
   $('#logout').onclick = () => { if (confirm('Von diesem Gerät abmelden?')) { LS.del('key'); location.reload(); } };
 }
 

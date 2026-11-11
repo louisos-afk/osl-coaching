@@ -1371,6 +1371,7 @@ function renderSettings() {
         <div class="row"><span class="t2">API-Key:</span><code>${key ? '••••••••' + esc(key.slice(-4)) : '–'}</code></div>
         <div class="row"><button class="btn" id="setKey">Key ändern</button><button class="btn danger" id="delKey">Key aus diesem Browser löschen</button></div>
         <div class="small muted">Der Key liegt nur in diesem Browser. Auf jedem neuen Gerät einmal eingeben.</div></div>
+      <div id="pushCard"></div>
       <div class="card stack"><h3>Wochenfreigabe</h3>
         <div class="t2">Athleten sehen geplante Workouts nur für die nächsten 2 Wochen. Jeden Sonntag wird die übernächste Woche freigegeben. Aktuell sichtbar bis <b>${dLong(horizon())}</b>.</div>
         <div class="row"><button class="btn" id="syncVis">Jetzt abgleichen</button><span class="small muted" id="syncRes"></span></div>
@@ -1385,6 +1386,7 @@ function renderSettings() {
       <div class="row" style="justify-content:space-between"><span class="small muted" id="notesState">Wird automatisch in diesem Browser gespeichert.</span><button class="btn sm" id="notesCopy">Kopieren</button></div>
       <div class="small" style="color:var(--s2)">Hinweis: Notizen liegen unverschlüsselt im Browser. Passwörter besser in einen Passwort-Manager.</div></div></div>`;
   $('#setKey').onclick = () => keyDialog(false);
+  mountPushCard($('#pushCard'), 'coach');
   $('#syncVis').onclick = async () => { $('#syncRes').innerHTML = '<span class="spin"></span>'; try { $('#syncRes').textContent = (await syncVisibility()).join(' · '); } catch (e) { $('#syncRes').textContent = e.message; } };
   $('#delKey').onclick = () => { if (confirm('API-Key aus diesem Browser löschen?')) { LS.del('key'); location.reload(); } };
   let t; $('#notes').oninput = e => { clearTimeout(t); t = setTimeout(() => { LS.set('notes', e.target.value); $('#notesState').textContent = 'Gespeichert ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }, 400); };
@@ -1395,6 +1397,62 @@ function renderSettings() {
 // Ordner "OSL-Coaching Daten": "_settings" (JSON) und "Plan: <Name>" (Plan-Vorlagen als JSON).
 const DATA_FOLDER = 'OSL-Coaching Daten';
 const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
+// =============== Push-Benachrichtigungen ===============
+// Jedes Gerät meldet sich mit einer Empfänger-Adresse an; die liegt im eigenen intervals-Konto
+// (Ordner "OSL-Coaching Daten", Eintrag "_push"). scripts/notify.py schickt von dort alle 5 Minuten.
+const VAPID_PUB = 'BP7PaH9wep6GdsUNzAcFS6Jr4W-nHleIDaYUX0F4CtXFiBJsI6rWNZDhhxGznuGeKMGHwpCbetR_wbkf-Er2Qeo';
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function b64u(t) { const b = atob((t + '='.repeat((4 - t.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, c => c.charCodeAt(0)); }
+async function pushReg() { return 'serviceWorker' in navigator ? navigator.serviceWorker.getRegistration() : null; }
+async function pushState() {
+  if (isIOS() && !isStandalone()) return 'install';
+  if (!('PushManager' in window) || !('Notification' in window)) return 'unsupported';
+  const reg = await pushReg(); if (!reg) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  return (await reg.pushManager.getSubscription()) && Notification.permission === 'granted' ? 'on' : 'off';
+}
+async function pushSave(change) {
+  const folders = (await iv('GET', 'athlete/0/folders')) || [];
+  let f = folders.find(x => x.type === 'FOLDER' && x.name === DATA_FOLDER);
+  if (!f) f = await iv('POST', 'athlete/0/folders', { type: 'FOLDER', name: DATA_FOLDER });
+  const it = (f.children || []).find(x => x.name === '_push'), data = it ? parseJson(it.description) : {};
+  data.subs = data.subs || []; change(data);
+  const body = { name: '_push', type: 'Other', description: JSON.stringify(data) };
+  if (it) await iv('PUT', `athlete/0/workouts/${it.id}`, body); else await iv('POST', 'athlete/0/workouts', Object.assign({ folder_id: f.id }, body));
+}
+async function pushEnable(role) {
+  if ((await Notification.requestPermission()) !== 'granted') throw new Error('Benachrichtigungen wurden nicht erlaubt.');
+  const reg = await pushReg();
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUB) });
+  const j = sub.toJSON();
+  await pushSave(d => { d.subs = d.subs.filter(x => x.endpoint !== j.endpoint); d.subs.push({ endpoint: j.endpoint, keys: j.keys, role, device: navigator.userAgent.slice(0, 90), added: new Date().toISOString() }); });
+}
+async function pushDisable() {
+  const reg = await pushReg(), sub = reg && await reg.pushManager.getSubscription(); if (!sub) return;
+  const ep = sub.endpoint; await sub.unsubscribe(); await pushSave(d => { d.subs = d.subs.filter(x => x.endpoint !== ep); });
+}
+async function mountPushCard(el, role) {
+  if (!el) return;
+  const st = await pushState().catch(() => 'unsupported');
+  const what = role === 'coach' ? 'Nachrichten und Feedback deiner Athleten, absolvierte Läufe und verpasste Workouts.' : 'Nachrichten vom Coach, neue oder geänderte Workouts, deinen Plan am Sonntag, eine Erinnerung morgens und nach dem Lauf.';
+  const txt = { on: 'Aktiv auf diesem Gerät. Du bekommst: ' + what, off: 'Bekomme ' + what,
+    install: 'Auf dem iPhone geht das nur in der installierten App: in Safari auf Teilen tippen, „Zum Home-Bildschirm“ wählen und die App dann von dort öffnen.',
+    denied: 'Benachrichtigungen sind für diese App blockiert. Erlaube sie in den Einstellungen deines Geräts und öffne die App neu.',
+    unsupported: 'Hier nicht verfügbar. Öffne die installierte App oder Chrome, Edge oder Safari.' }[st];
+  el.innerHTML = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><b>🔔 Benachrichtigungen</b><div class="small muted" style="margin-top:4px">${txt}</div></div>
+    ${st === 'on' ? '<button class="btn sm" data-push="off">Aus</button>' : st === 'off' ? '<button class="btn pri sm" data-push="on">Aktivieren</button>' : ''}</div>
+    ${st === 'on' ? '<div style="margin-top:10px"><button class="btn ghost sm" data-push="test">Test auf diesem Gerät</button></div>' : ''}<div class="small err" data-push-err></div></div>`;
+  el.querySelectorAll('[data-push]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      if (b.dataset.push === 'on') await pushEnable(role);
+      else if (b.dataset.push === 'off') await pushDisable();
+      else { (await pushReg()).showNotification('OSL-Coaching', { body: 'So sehen deine Benachrichtigungen aus. 👍', icon: 'icons/icon-192.png' }); b.disabled = false; return; }
+      mountPushCard(el, role);
+    } catch (e) { el.querySelector('[data-push-err]').textContent = e.message; b.disabled = false; }
+  });
+}
 async function loadStore() {
   const folders = await iv('GET', 'athlete/0/folders');
   let f = (folders || []).find(x => x.type === 'FOLDER' && x.name === DATA_FOLDER);
