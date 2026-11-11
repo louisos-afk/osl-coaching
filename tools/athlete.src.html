@@ -117,7 +117,8 @@ dialog.full{max-width:760px;width:100vw;max-height:100dvh;border-radius:18px}
 globalThis.KM_DEC = 2;
 const S = { me: null, settings: {}, actCache: {}, actIndex: {}, evIndex: {}, pm: {}, view: LS.get('view', 'plan'), histDays: 30 };
 const cur = () => S.me;
-const visible = e => !e.hide_from_athlete;
+// Sichtbar: nicht versteckt und (bei Workouts) nicht nach der Wochenfreigabe; gilt auch, falls der Abgleich noch nicht gelaufen ist
+const visible = e => !e.hide_from_athlete && (e.category !== 'WORKOUT' || e.start_date_local.slice(0, 10) <= ymd(horizon()));
 const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 $('#dlg').addEventListener('close', () => { $('#dlgBody').innerHTML = ''; });
 
