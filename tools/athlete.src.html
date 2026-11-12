@@ -368,15 +368,15 @@ async function renderAna() {
     <h2 class="sec">Effizienz</h2><div class="card"><h3>Meter pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Wie weit du pro Herzschlag kommst. Steigt der Wert, wirst du fitter.</div><div id="anaEfP"></div></div>
     <div class="card" style="margin-top:12px"><h3>Watt pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Leistung pro Herzschlag (Stryd). Steigt der Wert, wirst du fitter.</div><div id="anaEfW"></div></div>
     <h2 class="sec">Laufstil (Stryd)</h2><div id="anaEco"></div>
-    <h2 class="sec">Leistungskurve</h2><div class="card tbl-wrap" id="anaPc"><span class="spin"></span></div>`;
+    <h2 class="sec">Leistungskurve</h2><div class="card" id="anaPc"></div>`;
   chart($('#anaFit'), [{ name: 'Fitness (6 Wochen)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung (7 Tage)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0, xr });
   for (const [el, k, c] of [['#anaEfP', 'efPace', 'var(--s3)'], ['#anaEfW', 'efW', 'var(--s1)']]) { const rs = runs.filter(r => r[k]);
     chart($(el), [{ name: 'Einzelner Lauf', color: c, scatter: true, pts: rs.map(r => ({ x: r.date, y: r[k], label: r.name })) }, { name: 'Ø 5 Läufe', color: c, pts: roll(rs, k) }], { yfmt: n2, empty: 'Keine Daten im Zeitraum.', xr }); }
   $('#anaFocus').innerHTML = '<div class="small muted"><span class="spin"></span> Berechne Zeit in den Pace-Zonen …</div>';
   paceZoneTimes(acts, set.Run, (d, n) => { const el = $('#anaFocus .small'); if (el) el.innerHTML = `<span class="spin"></span> Berechne Zeit in den Pace-Zonen … ${d}/${n}`; })
     .then(pz => { if ($('#anaFocus')) $('#anaFocus').innerHTML = focusRadar(acts, pz); });
-  ecoCards($('#anaEco'), acts, 'stack', xr);
-  powerCurveHtml(id, from, to).then(h => { if ($('#anaPc')) $('#anaPc').innerHTML = h; });
+  ecoCards($('#anaEco'), acts, 'stack', xr, set);
+  powerCurveCard($('#anaPc'), id, from, to);
 }
 
 // Zeit in den Pace-Zonen je Lauf aus dem Geschwindigkeitsverlauf (Sekunden je Zone), im Gerät zwischengespeichert

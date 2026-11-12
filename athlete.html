@@ -253,6 +253,8 @@ input[type=date]{min-height:36px}
 }
 .ic{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none}
 .fdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:.05em}
+.ev.linked{border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--card2))}
+.ok-check{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--ok);color:#0b0d10;font-size:10px;font-weight:800;margin-right:5px;flex:none}
 
 /* ---- Athleten-App ---- */
 body{display:block;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
@@ -590,27 +592,48 @@ const ECO = [
 const ecoRuns = acts => acts.filter(a => sportOf(a.type) === 'Run' && a.moving_time > 900).map(a => Object.assign(economy(a), { date: parseYmd(a.start_date_local), name: a.name, id: a.id, speed: a.distance / a.moving_time }))
   .sort((x, y) => x.date - y.date);
 function ecoKpis(a) { const e = economy(a); return ECO.filter(m => e[m[0]] != null).map(m => [m[1], m[4](e[m[0]]) + (m[2] ? ' ' + m[2] : '')]); }
-function ecoCards(el, acts, cls = 'g2', xr = null) {
-  const runs = ecoRuns(acts), roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
-  const avail = ECO.filter(m => runs.filter(r => r[m[0]] != null).length >= 3);
+function ecoCards(el, acts, cls = 'g2', xr = null, set = null) {
+  const all = ecoRuns(acts), R = set?.Run, lt1 = R?.threshold_pace && R.pace_zones?.length > 1 ? R.threshold_pace * R.pace_zones[1] / 100 : null;
+  const G = lt1 ? [['easy', 'Locker', 'var(--s1)', r => r.speed < lt1], ['tempo', 'Tempo', 'var(--s2)', r => r.speed >= lt1]] : [['all', 'Alle Läufe', 'var(--s1)', () => true]];
+  const roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
+  const avail = ECO.filter(m => all.filter(r => r[m[0]] != null).length >= 3);
   if (!avail.length) { el.innerHTML = '<div class="small muted">Keine Laufdynamik-Daten (Stryd oder Brustgurt) im Zeitraum.</div>'; return; }
-  const tr = (k, dir) => { const v = runs.filter(r => r[k] != null); if (v.length < 6) return ''; const h = Math.floor(v.length / 2), a = v.slice(0, h).reduce((s, r) => s + r[k], 0) / h, b = v.slice(h).reduce((s, r) => s + r[k], 0) / (v.length - h), p = (b / a - 1) * 100;
+  const tr = (runs, k, dir) => { const v = runs.filter(r => r[k] != null); if (v.length < 6) return '<span class="muted">zu wenig Läufe für Trend</span>'; const h = Math.floor(v.length / 2), a = v.slice(0, h).reduce((s, r) => s + r[k], 0) / h, b = v.slice(h).reduce((s, r) => s + r[k], 0) / (v.length - h), p = (b / a - 1) * 100;
     const good = dir === 'up' ? p > 0.5 : dir === 'down' ? p < -0.5 : null; return `<span style="color:${good == null || Math.abs(p) <= 0.5 ? 'var(--text2)' : good ? 'var(--ok)' : 'var(--warn)'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(1).replace('.', ',')} %</span>`; };
-  el.innerHTML = `<div class="kpis">${avail.map(m => { const v = runs.filter(r => r[m[0]] != null); return `<div class="kpi"><div class="l">${m[1]}</div><div class="v">${m[4](v.reduce((s, r) => s + r[m[0]], 0) / v.length)}<small>${m[2]}</small></div><div class="d">${tr(m[0], m[5])}</div></div>`; }).join('')}</div>
-    <div class="${cls}">${avail.map(m => `<div class="card"><h3>${m[1]}${m[2] ? ' · ' + m[2] : ''}</h3><div class="small muted" style="margin:-6px 0 8px">${m[3]}</div><div data-eco="${m[0]}"></div></div>`).join('')}</div>`;
-  for (const m of avail) { const rs = runs.filter(r => r[m[0]] != null);
-    chart($(`[data-eco="${m[0]}"]`, el), [{ name: 'Einzelner Lauf', color: m[6], scatter: true, pts: rs.map(r => ({ x: r.date, y: r[m[0]], label: `${r.name} · ${fmtPace(r.speed)}/km` })) }, { name: 'Ø 5 Läufe', color: m[6], pts: roll(rs, m[0]) }], Object.assign({ xr }, { yfmt: m[4] })); }
+  const groups = G.map(([k, l, c, f]) => ({ k, l, c, runs: all.filter(f) })).filter(g => g.runs.length);
+  const avgPace = runs => fmtPace(runs.reduce((s, r) => s + r.speed, 0) / runs.length);
+  el.innerHTML = groups.map(g => `<div class="eco-grp"><div class="row" style="gap:8px;align-items:baseline;margin:4px 0 8px"><span class="dot" style="background:${g.c};width:10px;height:10px"></span><b>${g.l}</b><span class="small t2">Ø ${avgPace(g.runs)} /km · ${g.runs.length} Läufe</span></div>
+      <div class="kpis">${avail.map(m => { const v = g.runs.filter(r => r[m[0]] != null); return v.length ? `<div class="kpi"><div class="l">${m[1]}</div><div class="v">${m[4](v.reduce((s, r) => s + r[m[0]], 0) / v.length)}<small>${m[2]}</small></div><div class="d">${tr(g.runs, m[0], m[5])}</div></div>` : ''; }).join('')}</div></div>`).join('')
+    + `<div class="small muted" style="margin:8px 0 12px">${lt1 ? `Locker = Ø Pace langsamer als ${fmtPace(lt1)} /km (Ende Zone 2), Tempo = schneller. ` : ''}▲▼ vergleicht die zweite Hälfte der Läufe im Zeitraum mit der ersten Hälfte. Grün = besser, rot = schlechter, grau = ohne Wertung (Kadenz, Schrittlänge).</div>`
+    + `<div class="${cls}">${avail.map(m => `<div class="card"><h3>${m[1]}${m[2] ? ' · ' + m[2] : ''}</h3><div class="small muted" style="margin:-6px 0 8px">${m[3]}</div><div data-eco="${m[0]}"></div></div>`).join('')}</div>`;
+  for (const m of avail) {
+    const series = groups.flatMap(g => { const rs = g.runs.filter(r => r[m[0]] != null); return rs.length ? [{ name: g.l, color: g.c, scatter: true, pts: rs.map(r => ({ x: r.date, y: r[m[0]], label: `${r.name} · ${fmtPace(r.speed)}/km` })) }, { name: `Ø 5 ${g.l}`, color: g.c, pts: roll(rs, m[0]) }] : []; });
+    chart($(`[data-eco="${m[0]}"]`, el), series, { xr, yfmt: m[4] });
+  }
 }
-async function powerCurveHtml(aid, from, to) {
-  // Gleicher Zeitraum wie die Diagramme: endet er heute, "N Tage" (sicher unterstützt), sonst Datumsbereich
-  const today = ymd(new Date()), days = from ? Math.round((parseYmd(to || today) - parseYmd(from)) / 864e5) + 1 : 42;
-  const spec = !from || (to || today) >= today ? `${days}d` : `r.${from}.${to}`;
-  const d = await iv('GET', `athlete/${aid}/power-curves.json?type=Run&curves=${spec}`).catch(() => null), L = d?.list || [];
-  if (!L.length || !L[0].secs?.length) return `<div class="small muted">${spec.startsWith('r.') ? 'Für diesen Zeitraum liefert intervals.icu keine Leistungskurve. Wähle einen Zeitraum bis heute.' : 'Keine Leistungsdaten im Zeitraum.'}</div>`;
-  const c = L[0], at = s => { const i = c.secs.indexOf(s); return i >= 0 ? c.values[i] : null; }, kg = c.weight;
-  const durs = [[60, '1 min'], [180, '3 min'], [300, '5 min'], [600, '10 min'], [1200, '20 min'], [1800, '30 min'], [3600, '60 min']];
-  return `<table><tr><th>Dauer</th><th class="num">Bestwert im Zeitraum</th>${kg ? '<th class="num">W/kg</th>' : ''}</tr>
-    ${durs.map(([sec, n]) => `<tr><td>${n}</td><td class="num">${at(sec) ? at(sec) + ' W' : '–'}</td>${kg ? `<td class="num">${at(sec) ? n2(at(sec) / kg) : '–'}</td>` : ''}</tr>`).join('')}</table>`;
+const PC_CMP = [['', 'Kein Vergleich'], ['42', 'Letzte 6 Wochen'], ['91', 'Letzte 3 Monate'], ['182', 'Letzte 6 Monate'], ['365', 'Letztes Jahr'], ['730', 'Letzte 2 Jahre']];
+async function powerCurveCard(el, aid, from, to) {
+  // Endet der Zeitraum heute: "N Tage" (sicher unterstützt), sonst Datumsbereich
+  const today = ymd(new Date()), days = Math.round((parseYmd(to) - parseYmd(from)) / 864e5) + 1;
+  const main = to >= today ? `${days}d` : `r.${from}.${to}`, cmp = LS.get('pcCmp', days <= 120 ? '365' : '');
+  el.innerHTML = `<div class="row" style="justify-content:space-between;gap:8px;margin-bottom:8px"><span class="small t2">Bestwerte im Zeitraum</span>
+    <label class="row small t2" style="gap:6px">Vergleich<select id="pcCmp">${PC_CMP.map(([v, l]) => `<option value="${v}" ${v === cmp ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <div id="pcChart"><span class="spin"></span></div><div class="tbl-wrap" id="pcTbl" style="margin-top:8px"></div>`;
+  $('#pcCmp', el).onchange = e => { LS.set('pcCmp', e.target.value); powerCurveCard(el, aid, from, to); };
+  const d = await iv('GET', `athlete/${aid}/power-curves.json?type=Run&curves=${main}${cmp ? ',' + cmp + 'd' : ''}`).catch(() => null), L = (d?.list || []).filter(c => c.secs?.length);
+  if (!$('#pcChart', el)) return;
+  if (!L.length) { $('#pcChart', el).innerHTML = `<div class="small muted">${main.startsWith('r.') ? 'Für diesen Zeitraum liefert intervals.icu keine Leistungskurve. Wähle einen Zeitraum bis heute.' : 'Keine Leistungsdaten im Zeitraum.'}</div>`; $('#pcTbl', el).innerHTML = ''; return; }
+  const [cur, ref] = L, name = c => c === cur ? 'Gewählter Zeitraum' : PC_CMP.find(x => x[0] === cmp)?.[1] || 'Vergleich';
+  // log. Zeitachse 5 s bis 2 h, etwa 60 Punkte
+  const grid = Array.from({ length: 60 }, (_, i) => Math.round(Math.exp(Math.log(5) + i * (Math.log(7200) - Math.log(5)) / 59)));
+  const pts = c => { const out = []; let j = 0; for (const g of grid) { while (j < c.secs.length - 1 && c.secs[j] < g) j++; if (c.secs[j] >= g && c.values[j] && (!out.length || out[out.length - 1].x !== Math.log(c.secs[j]))) out.push({ x: Math.log(c.secs[j]), y: c.values[j] }); } return out; };
+  const ticks = [5, 60, 300, 1200, 3600].map(Math.log), lab = v => { const t = Math.round(Math.exp(v)); return t < 60 ? t + ' s' : t < 3600 ? Math.round(t / 60) + ' min' : (t / 3600).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' h'; };
+  chart($('#pcChart', el), [cur, ref].filter(Boolean).map((c, i) => ({ name: name(c), color: i ? 'var(--muted)' : 'var(--accent)', pts: pts(c) })), { xlab: lab, xticks: ticks, yfmt: v => n0(v) + ' W' });
+  const at = (c, sec) => { if (!c) return null; const i = c.secs.indexOf(sec); return i >= 0 ? c.values[i] : null; }, kg = cur.weight;
+  const durs = [[60, '1 min'], [300, '5 min'], [1200, '20 min'], [3600, '60 min']];
+  $('#pcTbl', el).innerHTML = `<table><tr><th>Dauer</th><th class="num">Zeitraum</th>${kg ? '<th class="num">W/kg</th>' : ''}${ref ? `<th class="num">${esc(name(ref))}</th><th class="num">Diff.</th>` : ''}</tr>
+    ${durs.map(([sec, n]) => { const v = at(cur, sec), w = at(ref, sec), p = v && w ? (v / w - 1) * 100 : null;
+      return `<tr><td>${n}</td><td class="num">${v ? v + ' W' : '–'}</td>${kg ? `<td class="num">${v ? n2(v / kg) : '–'}</td>` : ''}${ref ? `<td class="num">${w ? w + ' W' : '–'}</td><td class="num" style="color:${p == null ? '' : p >= 0 ? 'var(--ok)' : 'var(--warn)'}">${p == null ? '–' : (p >= 0 ? '+' : '−') + Math.abs(p).toFixed(1).replace('.', ',') + ' %'}</td>` : ''}</tr>`; }).join('')}</table>`;
 }
 const initials = n => n.split(/\s+/).map(x => x[0]).join('').slice(0, 2).toUpperCase();
 function openDialog(html, after) {
@@ -670,13 +693,13 @@ function chart(el, series, o = {}) {
   const ticks = 4, yt = Array.from({ length: ticks + 1 }, (_, i) => y0 + (y1 - y0) * i / ticks);
   // Achsenbeschriftung: bei sehr kleinem Wertebereich mehr Nachkommastellen, damit die Stufen unterscheidbar bleiben
   const ylab0 = o.yfmt || n0, ylab = new Set(yt.map(ylab0)).size === yt.length ? ylab0 : v => v.toLocaleString('de-DE', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  const xt = Array.from({ length: 4 }, (_, i) => x0 + (x1 - x0) * i / 3);
+  const xt = o.xticks || Array.from({ length: 4 }, (_, i) => x0 + (x1 - x0) * i / 3);
   const lines = series.filter(s => !s.scatter).map(s => { const p = s.pts.filter(q => q.y != null); return `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${p.map(q => X(+q.x).toFixed(1) + ',' + Y(q.y).toFixed(1)).join(' ')}"/>${o.dots ? p.map(q => `<circle cx="${X(+q.x)}" cy="${Y(q.y)}" r="3" fill="${s.color}" stroke="var(--card)" stroke-width="1.5"/>`).join('') : ''}`; }).join('');
   const dots = series.filter(s => s.scatter).map(s => s.pts.map(q => `<circle cx="${X(+q.x)}" cy="${Y(q.y)}" r="4" fill="${s.color}" fill-opacity=".35" stroke="${s.color}" stroke-width="1"/>`).join('')).join('');
   const legend = series.length > 1 ? `<div class="legend">${series.map(s => `<span><i style="background:${s.color};${s.scatter ? 'width:8px;height:8px;border-radius:50%;opacity:.6' : ''}"></i>${s.name}</span>`).join('')}</div>` : '';
   el.innerHTML = `${legend}<div class="chart"><svg viewBox="0 0 ${Wd} ${H}">
     ${yt.map(v => `<line class="gridl" x1="${L}" x2="${Wd - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${ylab(v)}</text>`).join('')}
-    ${xt.map(v => `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${o.xnum ? fmtDur(v) : dShort(new Date(v))}</text>`).join('')}
+    ${xt.map(v => `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${o.xlab ? o.xlab(v) : o.xnum ? fmtDur(v) : dShort(new Date(v))}</text>`).join('')}
     ${dots}${lines}<line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--text2)" stroke-dasharray="3 3" visibility="hidden"/><g class="hl"></g>
     <rect x="${L}" y="${T}" width="${Wd - L - R}" height="${H - T - B}" fill="transparent" class="hit"/></svg><div class="tip"></div></div>`;
   const svg = $('svg', el), tip = $('.tip', el), xh = $('.xh', el), hl = $('.hl', el);
@@ -687,7 +710,7 @@ function chart(el, series, o = {}) {
     const rows = series.map(s => ({ s, p: s.pts.find(q => +q.x === best && q.y != null) })).filter(r => r.p);
     xh.setAttribute('x1', X(best)); xh.setAttribute('x2', X(best)); xh.setAttribute('visibility', 'visible');
     hl.innerHTML = rows.map(r => `<circle cx="${X(best)}" cy="${Y(r.p.y)}" r="5" fill="${r.s.color}" stroke="var(--card)" stroke-width="2"/>`).join('');
-    tip.innerHTML = `<b>${o.xnum ? fmtDur(best) : (o.xfmt || dLong)(new Date(best))}</b>${rows.map(r => `<div class="tr"><span class="dot" style="background:${r.s.color}"></span>${r.p.label ? esc(r.p.label) : r.s.name}<strong>${(o.yfmt || n0)(r.p.y)}</strong></div>`).join('')}`;
+    tip.innerHTML = `<b>${o.xlab ? o.xlab(best) : o.xnum ? fmtDur(best) : (o.xfmt || dLong)(new Date(best))}</b>${rows.map(r => `<div class="tr"><span class="dot" style="background:${r.s.color}"></span>${r.p.label ? esc(r.p.label) : r.s.name}<strong>${(o.yfmt || n0)(r.p.y)}</strong></div>`).join('')}`;
     tip.style.display = 'block'; const px = X(best) / Wd * r.width; tip.style.left = Math.min(px + 12, r.width - tip.offsetWidth) + 'px'; tip.style.top = '8px';
   };
   const hit = $('.hit', el); hit.onmousemove = move; hit.ontouchstart = e => move(e.touches[0]);
@@ -1061,15 +1084,15 @@ async function renderAna() {
     <h2 class="sec">Effizienz</h2><div class="card"><h3>Meter pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Wie weit du pro Herzschlag kommst. Steigt der Wert, wirst du fitter.</div><div id="anaEfP"></div></div>
     <div class="card" style="margin-top:12px"><h3>Watt pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Leistung pro Herzschlag (Stryd). Steigt der Wert, wirst du fitter.</div><div id="anaEfW"></div></div>
     <h2 class="sec">Laufstil (Stryd)</h2><div id="anaEco"></div>
-    <h2 class="sec">Leistungskurve</h2><div class="card tbl-wrap" id="anaPc"><span class="spin"></span></div>`;
+    <h2 class="sec">Leistungskurve</h2><div class="card" id="anaPc"></div>`;
   chart($('#anaFit'), [{ name: 'Fitness (6 Wochen)', color: 'var(--s1)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.ctl })) }, { name: 'Belastung (7 Tage)', color: 'var(--s2)', pts: wl.map(x => ({ x: parseYmd(x.id), y: x.atl })) }], { yfmt: n0, xr });
   for (const [el, k, c] of [['#anaEfP', 'efPace', 'var(--s3)'], ['#anaEfW', 'efW', 'var(--s1)']]) { const rs = runs.filter(r => r[k]);
     chart($(el), [{ name: 'Einzelner Lauf', color: c, scatter: true, pts: rs.map(r => ({ x: r.date, y: r[k], label: r.name })) }, { name: 'Ø 5 Läufe', color: c, pts: roll(rs, k) }], { yfmt: n2, empty: 'Keine Daten im Zeitraum.', xr }); }
   $('#anaFocus').innerHTML = '<div class="small muted"><span class="spin"></span> Berechne Zeit in den Pace-Zonen …</div>';
   paceZoneTimes(acts, set.Run, (d, n) => { const el = $('#anaFocus .small'); if (el) el.innerHTML = `<span class="spin"></span> Berechne Zeit in den Pace-Zonen … ${d}/${n}`; })
     .then(pz => { if ($('#anaFocus')) $('#anaFocus').innerHTML = focusRadar(acts, pz); });
-  ecoCards($('#anaEco'), acts, 'stack', xr);
-  powerCurveHtml(id, from, to).then(h => { if ($('#anaPc')) $('#anaPc').innerHTML = h; });
+  ecoCards($('#anaEco'), acts, 'stack', xr, set);
+  powerCurveCard($('#anaPc'), id, from, to);
 }
 
 // Zeit in den Pace-Zonen je Lauf aus dem Geschwindigkeitsverlauf (Sekunden je Zone), im Gerät zwischengespeichert
