@@ -1,0 +1,36 @@
+name: Monatsbericht
+
+# Am Monatsersten: Claude schreibt für jeden Athleten einen Bericht über den Vormonat.
+on:
+  schedule:
+    - cron: "23 5 1 * *"   # 1. des Monats, 05:23 UTC
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Monat JJJJ-MM (leer = Vormonat)"
+        required: false
+        default: ""
+      athlete:
+        description: "Nur dieser Athlet (intervals-ID, leer = alle)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Abhängigkeit installieren
+        run: pip install --quiet pywebpush==2.5.0
+      - name: Berichte schreiben
+        env:
+          INTERVALS_API_KEY: ${{ secrets.INTERVALS_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          REPORT_MONTH: ${{ inputs.month }}
+          ONLY_ATHLETE: ${{ inputs.athlete }}
+        run: python3 scripts/monthly_report.py

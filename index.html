@@ -254,6 +254,9 @@ input[type=date]{min-height:36px}
 .fdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:.05em}
 .ev.linked{border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--card2))}
 .ok-check{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--ok);color:#0b0d10;font-size:10px;font-weight:800;margin-right:5px;flex:none}
+.report{border-top:1px solid var(--line);padding:10px 0}.report:first-child{border-top:0;padding-top:0}
+.report summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between}.report summary::after{content:'›';color:var(--muted);transition:transform .15s}.report[open] summary::after{transform:rotate(90deg)}
+.md{font-size:14px;line-height:1.55;color:var(--text2)}.md h4{margin:14px 0 6px;color:var(--text);font-size:14px}.md ul{margin:6px 0;padding-left:18px}.md li{margin:5px 0}.md b{color:var(--text)}.md p{margin:8px 0}
 </style>
 </head>
 <body>
@@ -1372,9 +1375,10 @@ async function renderAna() {
     <div class="g2">${['load', 'fit', 'efW', 'efP'].map(k => `<div class="card">${cardHead(k)}<div id="ch-${k}"></div></div>`).join('')}</div>
     <h2 style="font-size:16px;margin:28px 0 12px">Laufökonomie (Stryd)</h2><div id="ecoBox"></div>
     <div class="card" style="margin-top:16px"><h3>Leistungskurve Laufen</h3><div id="pcBox"></div></div>
+    <div class="card" style="margin-top:16px"><h3>Monatsberichte</h3><div id="repBox"><span class="spin"></span></div></div>
     <div class="card" style="margin-top:16px">${cardHead('tbl')}<div class="tbl-wrap tall" id="ch-tbl"></div></div>`;
   ecoCards($('#ecoBox'), acts.filter(x => x.start_date_local.slice(0, 10) >= from && x.start_date_local.slice(0, 10) <= to), 'g2', [parseYmd(from), parseYmd(to)], set);
-  powerCurveCard($('#pcBox'), a.id, from, to);
+  powerCurveCard($('#pcBox'), a.id, from, to); reportsCard($('#repBox'), a.id);
   if ($('#toThr')) $('#toThr').onclick = () => setTab('thr');
   formProjection(a.id).then(pr => { if (stale(a.id) || !$('#ch-proj')) return;
     if (!pr) { $('#ch-proj').innerHTML = '<div class="muted small">Keine Fitnessdaten.</div>'; return; }
@@ -1541,6 +1545,28 @@ function renderSettings() {
 // Ordner "OSL-Coaching Daten": "_settings" (JSON) und "Plan: <Name>" (Plan-Vorlagen als JSON).
 const DATA_FOLDER = 'OSL-Coaching Daten';
 const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
+// =============== Monatsberichte (von scripts/monthly_report.py als Notiz im Kalender gespeichert) ===============
+function mdLite(t) {
+  const inl = x => esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>');
+  let h = '', list = false;
+  for (const line of (t || '').split('\n')) {
+    const l = line.trim();
+    if (/^[-*] /.test(l)) { if (!list) { h += '<ul>'; list = true; } h += `<li>${inl(l.slice(2))}</li>`; continue; }
+    if (list) { h += '</ul>'; list = false; }
+    if (!l) continue;
+    const m = l.match(/^(#{1,4})\s+(.*)/); h += m ? `<h4>${inl(m[2])}</h4>` : `<p>${inl(l)}</p>`;
+  }
+  return h + (list ? '</ul>' : '');
+}
+const isReport = e => e.category === 'NOTE' && (/^osl-report:/.test(e.external_id || '') || /^Monatsbericht /.test(e.name || ''));
+async function reportsCard(el, aid) {
+  if (!el) return;
+  const t = new Date(), evs = await iv('GET', `athlete/${aid}/events?oldest=${ymd(addDays(t, -400))}&newest=${ymd(addDays(t, 1))}&category=NOTE`).catch(() => []);
+  const reps = (evs || []).filter(isReport).sort((a, b) => b.start_date_local.localeCompare(a.start_date_local));
+  if (!$('body').contains(el)) return;
+  el.innerHTML = reps.length ? reps.map((r, i) => `<details class="report" ${i ? '' : 'open'}><summary><b>${esc(r.name.replace('Monatsbericht ', ''))}</b></summary><div class="md">${mdLite(r.description)}</div></details>`).join('')
+    : '<div class="small muted">Noch kein Monatsbericht. Er erscheint am Monatsersten für den Vormonat.</div>';
+}
 // =============== Push-Benachrichtigungen ===============
 // Jedes Gerät meldet sich mit einer Empfänger-Adresse an; die liegt im eigenen intervals-Konto
 // (Ordner "OSL-Coaching Daten", Eintrag "_push"). scripts/notify.py schickt von dort alle 5 Minuten.
