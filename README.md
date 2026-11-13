@@ -35,9 +35,3 @@ iPhone: Seite in Safari öffnen, Teilen, „Zum Home-Bildschirm“. Android: Chr
   - an den Coach: Nachricht oder Feedback vom Athleten, absolvierter Lauf, verpasstes Workout vom Vortag
 - Benötigte Secrets: `INTERVALS_API_KEY` und `VAPID_PRIVATE_KEY`. Der öffentliche Schlüssel steht als `VAPID_PUB` in `index.html`.
 
-## Monatsbericht
-
-- `scripts/monthly_report.py` läuft am Monatsersten über `.github/workflows/monatsbericht.yml`.
-- Pro Athlet gehen die Daten des Vormonats (Einheiten, Wellness, Planerfüllung, Laufdynamik) plus drei Vormonate zum Vergleich an Claude. Claude schreibt 3 bis 5 nicht offensichtliche Erkenntnisse und Hinweise für den nächsten Monat.
-- Der Bericht wird als Notiz am Monatsersten im intervals-Kalender gespeichert (`external_id` `osl-report:JJJJ-MM`) und in beiden Apps unter Analyse angezeigt. Athlet und Coach bekommen eine Benachrichtigung.
-- Benötigt das Secret `ANTHROPIC_API_KEY`. Manuell: Actions → Monatsbericht → Run workflow (Monat und Athlet optional).

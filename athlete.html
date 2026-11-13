@@ -255,9 +255,6 @@ input[type=date]{min-height:36px}
 .fdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:.05em}
 .ev.linked{border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--card2))}
 .ok-check{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--ok);color:#0b0d10;font-size:10px;font-weight:800;margin-right:5px;flex:none}
-.report{border-top:1px solid var(--line);padding:10px 0}.report:first-child{border-top:0;padding-top:0}
-.report summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between}.report summary::after{content:'›';color:var(--muted);transition:transform .15s}.report[open] summary::after{transform:rotate(90deg)}
-.md{font-size:14px;line-height:1.55;color:var(--text2)}.md h4{margin:14px 0 6px;color:var(--text);font-size:14px}.md ul{margin:6px 0;padding-left:18px}.md li{margin:5px 0}.md b{color:var(--text)}.md p{margin:8px 0}
 
 /* ---- Athleten-App ---- */
 body{display:block;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
@@ -721,27 +718,6 @@ function chart(el, series, o = {}) {
 }
 const DATA_FOLDER = 'OSL-Coaching Daten';
 const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
-function mdLite(t) {
-  const inl = x => esc(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>');
-  let h = '', list = false;
-  for (const line of (t || '').split('\n')) {
-    const l = line.trim();
-    if (/^[-*] /.test(l)) { if (!list) { h += '<ul>'; list = true; } h += `<li>${inl(l.slice(2))}</li>`; continue; }
-    if (list) { h += '</ul>'; list = false; }
-    if (!l) continue;
-    const m = l.match(/^(#{1,4})\s+(.*)/); h += m ? `<h4>${inl(m[2])}</h4>` : `<p>${inl(l)}</p>`;
-  }
-  return h + (list ? '</ul>' : '');
-}
-const isReport = e => e.category === 'NOTE' && (/^osl-report:/.test(e.external_id || '') || /^Monatsbericht /.test(e.name || ''));
-async function reportsCard(el, aid) {
-  if (!el) return;
-  const t = new Date(), evs = await iv('GET', `athlete/${aid}/events?oldest=${ymd(addDays(t, -400))}&newest=${ymd(addDays(t, 1))}&category=NOTE`).catch(() => []);
-  const reps = (evs || []).filter(isReport).sort((a, b) => b.start_date_local.localeCompare(a.start_date_local));
-  if (!$('body').contains(el)) return;
-  el.innerHTML = reps.length ? reps.map((r, i) => `<details class="report" ${i ? '' : 'open'}><summary><b>${esc(r.name.replace('Monatsbericht ', ''))}</b></summary><div class="md">${mdLite(r.description)}</div></details>`).join('')
-    : '<div class="small muted">Noch kein Monatsbericht. Er erscheint am Monatsersten für den Vormonat.</div>';
-}
 const VAPID_PUB = 'BP7PaH9wep6GdsUNzAcFS6Jr4W-nHleIDaYUX0F4CtXFiBJsI6rWNZDhhxGznuGeKMGHwpCbetR_wbkf-Er2Qeo';
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -880,7 +856,6 @@ async function init() {
 }
 // Benachrichtigung angetippt: athlete.html#act=<id> öffnet die Aktivität direkt
 async function openFromHash() {
-  if (location.hash === '#report') { history.replaceState(null, '', location.pathname); nav('ana'); return; }
   const m = location.hash.match(/act=([\w-]+)/); if (!m) return;
   history.replaceState(null, '', location.pathname);
   try { openAct(await iv('GET', `activity/${m[1]}`)); } catch {}
@@ -921,7 +896,7 @@ async function renderPlan() {
   } catch (e) { if (S.view === 'plan') $('#view').innerHTML = `<div class="card err">${esc(e.message)}</div>`; return; }
   if (S.view !== 'plan') return; // inzwischen anderer Tab
   const horizon = ymd(addDays(today, 21));
-  evs = evs.filter(e => visible(e) && !isReport(e) && e.start_date_local.slice(0, 10) <= horizon); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
+  evs = evs.filter(e => visible(e) && e.start_date_local.slice(0, 10) <= horizon); const match = matchPlan(evs, acts), doneIds = new Set(Object.values(match).map(a => a.id));
   const race = races.filter(isRace).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local))[0];
   const todayRace = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) === t), todayEv = evs.filter(e => e.start_date_local.slice(0, 10) === t && !isRace(e)), todayAct = acts.filter(a => a.start_date_local.slice(0, 10) === t && !doneIds.has(a.id));
   let h = '';
@@ -1106,8 +1081,7 @@ async function renderAna() {
   const runs = acts.filter(a => sportOf(a.type) === 'Run' && a.moving_time > 900).map(a => Object.assign(metrics(a, set), { date: parseYmd(a.start_date_local), name: a.name })).sort((x, y) => x.date - y.date);
   const roll = (arr, k) => arr.map((m, i) => { const w = arr.slice(Math.max(0, i - 4), i + 1).map(x => x[k]).filter(v => v != null); return { x: m.date, y: w.length ? w.reduce((s, v) => s + v, 0) / w.length : null }; });
   const wl = (well || []).filter(x => x.ctl != null), xr = [parseYmd(from), parseYmd(to)];
-  $('#anaBody').innerHTML = `<h2 class="sec" id="reports">Monatsbericht</h2><div class="card" id="anaRep"><span class="spin"></span></div>
-    <h2 class="sec">Trainingsfokus</h2><div class="card" id="anaFocus"></div>
+  $('#anaBody').innerHTML = `<h2 class="sec">Trainingsfokus</h2><div class="card" id="anaFocus"></div>
     <h2 class="sec">Fitness und Belastung</h2><div class="card"><div class="small muted" style="margin-bottom:8px"><b style="color:var(--s1)">Fitness</b> ist deine durchschnittliche Trainingsbelastung der letzten 6 Wochen, <b style="color:var(--s2)">Belastung</b> die der letzten 7 Tage. Liegt die Belastung über der Fitness, trainierst du mehr als gewohnt: Die Fitness steigt, du bist aber müder. Liegt sie darunter, erholst du dich und wirst frischer.</div><div id="anaFit"></div></div>
     <h2 class="sec">Effizienz</h2><div class="card"><h3>Meter pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Wie weit du pro Herzschlag kommst. Steigt der Wert, wirst du fitter.</div><div id="anaEfP"></div></div>
     <div class="card" style="margin-top:12px"><h3>Watt pro Herzschlag</h3><div class="small muted" style="margin:-6px 0 8px">Leistung pro Herzschlag (Stryd). Steigt der Wert, wirst du fitter.</div><div id="anaEfW"></div></div>
@@ -1120,7 +1094,7 @@ async function renderAna() {
   paceZoneTimes(acts, set.Run, (d, n) => { const el = $('#anaFocus .small'); if (el) el.innerHTML = `<span class="spin"></span> Berechne Zeit in den Pace-Zonen … ${d}/${n}`; })
     .then(pz => { if ($('#anaFocus')) $('#anaFocus').innerHTML = focusRadar(acts, pz); });
   ecoCards($('#anaEco'), acts, 'stack', xr, set);
-  powerCurveCard($('#anaPc'), id, from, to); reportsCard($('#anaRep'), id);
+  powerCurveCard($('#anaPc'), id, from, to);
 }
 
 // Zeit in den Pace-Zonen je Lauf aus dem Geschwindigkeitsverlauf (Sekunden je Zone), im Gerät zwischengespeichert
