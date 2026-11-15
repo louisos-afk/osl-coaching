@@ -158,7 +158,20 @@ if TODAY.weekday() == 6:
     HORIZON = TODAY + dt.timedelta(days=7) if NOW.hour >= 18 else TODAY
 else:
     HORIZON = TODAY + dt.timedelta(days=6 - TODAY.weekday())
-day_time = 7 <= NOW.hour < 22  # nachts keine Erinnerungen, Nachrichten immer
+day_time = 7 <= NOW.hour < 22
+
+# Wochenfreigabe nachholen: GitHub startet den Sonntagstermin nicht zuverlaessig. Sobald sich die Sichtbarkeitsgrenze
+# aendert (Sonntag ab 18 Uhr), gleicht der naechste Lauf hier einmal ab. Danach bleiben Haken des Coachs unangetastet.
+if state.get("release_horizon") != str(HORIZON):
+    for aid in athletes:
+        for e in api("GET", f"athlete/{aid}/events?oldest={TODAY}&newest={TODAY + dt.timedelta(days=400)}") or []:
+            if e.get("category") != "WORKOUT":
+                continue
+            want = ldate(e["start_date_local"]) > HORIZON
+            if bool(e.get("hide_from_athlete")) != want and not DRY:
+                api("PUT", f"athlete/{aid}/events/{e['id']}", {"hide_from_athlete": want})
+    state["release_horizon"] = str(HORIZON)
+    print(f"Wochenfreigabe abgeglichen bis {HORIZON}")  # nachts keine Erinnerungen, Nachrichten immer
 
 for aid, name in athletes.items():
     first = name.split()[0]
