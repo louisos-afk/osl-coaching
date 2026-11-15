@@ -289,6 +289,9 @@ h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--
 .rest .ri{font-size:18px;line-height:1}
 .rest .rs{color:var(--muted);font-weight:400;font-size:12px;margin-left:auto}
 .dayrow.past .rest{opacity:.55}
+.relcard{display:flex;gap:12px;align-items:flex-start;margin-top:16px;padding:14px;border-radius:14px;border:1px solid rgba(200,245,96,.35);background:rgba(200,245,96,.07)}
+.relcard .ri{font-size:24px;color:var(--accent);line-height:1}
+.relcard .small{margin-top:3px}
 .restcard{display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;background:linear-gradient(135deg,rgba(122,167,255,.22),rgba(122,167,255,.05));border:1px solid rgba(122,167,255,.4)}
 .restcard .ri{font-size:34px;line-height:1}
 .restcard .nm{font-size:18px;font-weight:700;color:#cfdcff}
@@ -931,12 +934,17 @@ async function renderPlan() {
     for (const a of da) h += `<div class="item click" data-act="${esc(a.id)}"><span class="t">✓ ${esc(a.name || a.type)}</span><span class="m">${actMeta(a)}</span></div>`;
     h += '</div></div>';
   }
+  // Wann kommt der nächste Plan? Freigabe jeden Sonntag ab 18 Uhr (RELEASE_HOUR)
+  { const now = new Date(), sun = addDays(new Date(now.getFullYear(), now.getMonth(), now.getDate()), (7 - now.getDay()) % 7);
+    let rel = new Date(sun.getFullYear(), sun.getMonth(), sun.getDate(), RELEASE_HOUR); if (rel <= now) rel = addDays(rel, 7);
+    const hrs = (rel - now) / 36e5, when = hrs < 1 ? 'in wenigen Minuten' : hrs < 24 && rel.getDate() === now.getDate() ? `heute ab ${RELEASE_HOUR} Uhr` : `Sonntag, ${rel.getDate()}.${rel.getMonth() + 1}. ab ${RELEASE_HOUR} Uhr`;
+    const left = hrs < 24 ? `noch ${Math.max(1, Math.round(hrs))} Std.` : `noch ${Math.ceil(hrs / 24)} ${Math.ceil(hrs / 24) === 1 ? 'Tag' : 'Tage'}`;
+    h += `<div class="relcard"><span class="ri">${ICON.plan}</span><div><b>Nächster Wochenplan</b><div class="small t2">kommt ${when} · ${left}</div><div class="small muted">Dein Coach gibt jeden Sonntag ab ${RELEASE_HOUR} Uhr die neue Woche frei. Du bekommst dann eine Benachrichtigung.</div></div></div>`; }
   // Alle kommenden Wettkämpfe
   const allRaces = races.filter(e => isRace(e) && e.start_date_local.slice(0, 10) > t).sort((a, b) => a.start_date_local.localeCompare(b.start_date_local));
   if (allRaces.length) h += `<h2 class="sec">Kommende Wettkämpfe</h2>${allRaces.map(r => { const ri = raceInfo(r), d = Math.round((parseYmd(r.start_date_local) - parseYmd(t)) / 864e5);
     return `<div class="dayrow click" data-ev="${r.id}"><div class="dd"><b style="color:${RACE_COL[ri.prio]}">${d}</b>${d === 1 ? 'Tag' : 'Tage'}</div><div class="item" style="padding:0 4px">${prioTag(ri.prio)}<span class="t">${esc(r.name)}</span>
       <span class="m">${WD[parseYmd(r.start_date_local).getDay()]}, ${dLong(parseYmd(r.start_date_local))}${r.distance ? ' · ' + km(r.distance) + ' km' : ''}${ri.goal ? ' · Ziel ' + fmtDur(ri.goal) : ''}</span></div></div>`; }).join('')}`;
-  h += `<div class="small muted" style="margin-top:14px;text-align:center">Dein Coach gibt jeden Sonntagabend die neue Woche frei.</div>`;
   $('#view').innerHTML = `<div id="pushHint"></div>` + h;
   // Einmaliger Hinweis, solange Benachrichtigungen aus sind
   if (!LS.get('pushHintOff', false)) pushState().then(st => { const el = $('#pushHint'); if (!el || !['off', 'install'].includes(st)) return;
