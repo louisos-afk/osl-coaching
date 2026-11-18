@@ -40,8 +40,16 @@ def api(method, path, body=None):
     req.add_header("Authorization", AUTH)
     req.add_header("Content-Type", "application/json")
     req.add_header("User-Agent", "osl-coaching-notify/1.0")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read() or b"null")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as ex:
+        try:
+            detail = ex.read()[:300].decode("utf-8", "replace").replace("\n", " ")
+        except Exception:
+            detail = ""
+        print(f"intervals.icu {method} {path.split('?')[0]} -> {ex.code}: {detail}")
+        raise
 
 
 def jload(t):
@@ -296,6 +304,16 @@ def subs_for(aid):
     return subs_cache[aid]
 
 
+# Erst den Stand speichern, dann senden. Klappt das Speichern nicht, wird nichts gesendet:
+# sonst gingen dieselben Benachrichtigungen bei jedem Lauf erneut raus.
+if json.dumps(state, sort_keys=True) != state_before and not DRY:
+    raw = json.dumps(state, separators=(",", ":"))
+    try:
+        save_item(COACH, coach_folder, state_item, "_push_state", state)
+    except urllib.error.HTTPError as ex:
+        print(f"::warning::Stand konnte nicht gespeichert werden ({ex.code}, {len(raw)} Zeichen). {len(outbox)} Benachrichtigungen NICHT gesendet.")
+        sys.exit(0)
+
 if outbox and not DRY:
     from pywebpush import WebPushException, webpush
 
@@ -327,8 +345,6 @@ for aid, (f, it, data, changed) in subs_cache.items():
     if changed and f and not DRY:
         save_item(aid, f, it, "_push", data)
 
-if json.dumps(state, sort_keys=True) != state_before and not DRY:
-    save_item(COACH, coach_folder, state_item, "_push_state", state)
 from urllib.parse import urlparse as _up
 def _dev(k):
     return [f"{_up(x['endpoint']).hostname} ({(x.get('added') or '')[:16]})" for x in subs_for(k)[2].get("subs") or []]
