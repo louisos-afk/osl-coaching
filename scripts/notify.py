@@ -205,8 +205,9 @@ for aid, name in athletes.items():
         seen_acts[k] = sig
     s["acts"] = {k: v for k, v in seen_acts.items() if k in {str(a["id"]) for a in acts}}
 
-    # Nachrichten (beide Richtungen)
-    for a in acts:
+    # Nachrichten (beide Richtungen): jede Minute nur Läufe der letzten 3 Tage, alle 10 Tage nur alle 15 Minuten (schont intervals.icu)
+    recent = str(TODAY - dt.timedelta(days=3))
+    for a in (acts if NOW.minute % 15 == 0 or init else [x for x in acts if x["start_date_local"][:10] >= recent]):
         try:
             msgs = api("GET", f"activity/{a['id']}/messages") or []
         except urllib.error.HTTPError:
