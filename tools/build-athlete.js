@@ -15,7 +15,7 @@ const NAMES = new Set(['$', '$$', 'esc', 'LS', 'status', 'iv', 'pool', 'pad', 'y
   'isRace', 'raceInfo', 'downsample', 'chart', 'matchPlan', 'compliance', 'compColor', 'compPill', 'stepRange', 'compareSteps',
   'planVsActualHtml', 'formTxt', 'FEEL', 'feedbackPills', 'loadMessages',
   'SVG', 'ICON', 'RACE_COL', 'prioTag', 'ZONE6', 'ZONE_COL', 'zones6', 'zoneTimes6', 'zoneLabel', 'FEEL_COL', 'feelTag', 'DATA_FOLDER', 'parseJson', 'VAPID_PUB', 'isIOS', 'isStandalone', 'b64u', 'pushReg', 'pushState', 'pushSave', 'pushEnable', 'pushDisable', 'mountPushCard',
-  'economy', 'n1', 'ECO', 'ecoRuns', 'ecoKpis', 'ecoCards', 'PC_CMP', 'powerCurveCard']);
+  'economy', 'n1', 'ECO', 'ecoRuns', 'ecoKpis', 'ecoCards', 'FOCUS_CATS', 'FOCUS_ZONE_MAP_7', 'FOCUS_CUTS', 'FOCUS_LIM', 'FOCUS_MIN_BASE', 'FOCUS_COL', 'FOCUS_DAYS', 'focusZoneCats', 'focusLimits', 'focusModel', 'focusWarnings', 'fmtInt', 'fmtWeek', 'isFocusRun', 'gapFactor', 'focusCfg', 'zoneCat', 'focusFromSamples', 'focusActivity', 'focusCompute', 'athStore', 'setAthOpt', 'focusSvg', 'focusCard', 'PC_CMP', 'powerCurveCard']);
 
 const ast = acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'script', allowAwaitOutsideFunction: true });
 const out = [], found = new Set();

@@ -254,6 +254,13 @@ input[type=date]{min-height:36px}
 .fdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:.05em}
 .ev.linked{border-color:color-mix(in srgb,var(--ok) 55%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--card2))}
 .ok-check{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:var(--ok);color:#0b0d10;font-size:10px;font-weight:800;margin-right:5px;flex:none}
+.radar{width:100%;max-width:460px;display:block;margin:0 auto 6px}
+.radar .rg{fill:none;stroke:rgba(255,255,255,.12);stroke-width:1}
+.radar .rs{fill:rgba(200,245,96,.28);stroke:var(--accent);stroke-width:2;stroke-linejoin:round}
+.radar .rl{fill:var(--text);font-size:15px;font-weight:600}
+.radar .rv{fill:var(--muted);font-size:13px}
+.fc-detail{min-height:18px;text-align:center;color:var(--text2);margin:2px 0 6px}
+.fc-warn{display:flex;flex-direction:column;gap:4px;font-size:13px;margin-top:6px}
 </style>
 </head>
 <body>
@@ -1324,7 +1331,7 @@ $('#view').addEventListener('click', onItemTap);
 $('#dlg').addEventListener('click', onItemTap);
 
 // =============== Analyse ===============
-const PRESETS_R = [['4W', 28], ['3M', 91], ['6M', 182], ['1J', 365], ['2J', 730]];
+const PRESETS_R = [['4W', 28], ['3M', 91], ['6M', 182], ['1J', 364], ['2J', 728]];
 const presetDates = p => { const d = PRESETS_R.find(x => x[0] === p)[1]; return [ymd(addDays(new Date(), -d + 1)), ymd(new Date())]; };
 function rangeDates() { const r = S.range; return r.preset ? presetDates(r.preset) : [r.from, r.to]; }
 // Jede Karte kann einen eigenen Zeitraum haben; ohne Angabe gilt der obere Zeitraum.
@@ -1361,7 +1368,7 @@ async function renderAna() {
   const half = runs.length >= 4 ? [runs.slice(0, Math.floor(runs.length / 2)), runs.slice(Math.floor(runs.length / 2))] : null;
   const trend = k => { if (!half) return ''; const [x, y] = half.map(h => avg(h, k)); if (!x || !y) return ''; const p = (y / x - 1) * 100; return `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(1).replace('.', ',')} % im Zeitraum`; };
   const sumP = W.reduce((s, x) => s + x.p, 0), sumH = W.reduce((s, x) => s + x.h, 0);
-  $('#ana').innerHTML = `<div class="kpis">
+  $('#ana').innerHTML = `<div class="card" style="margin-bottom:16px"><h3>Trainingsfokus</h3><div id="focusBox"></div></div><div class="kpis">
       <div class="kpi"><div class="l">TSS Watt (gesamt)</div><div class="v">${n0(sumP)}</div><div class="d">Ø ${n0(sumP / W.length)} / Woche</div></div>
       <div class="kpi"><div class="l">TSS HR (gesamt)</div><div class="v">${n0(sumH)}</div><div class="d">Ø ${n0(sumH / W.length)} / Woche</div></div>
       <div class="kpi"><div class="l">Umfang</div><div class="v">${km(W.reduce((s, x) => s + x.m, 0))}<small>km</small></div><div class="d">${fmtH(W.reduce((s, x) => s + x.sec, 0))} · ${ms.length} Einheiten</div></div>
@@ -1373,6 +1380,7 @@ async function renderAna() {
     <h2 style="font-size:16px;margin:28px 0 12px">Laufökonomie (Stryd)</h2><div id="ecoBox"></div>
     <div class="card" style="margin-top:16px"><h3>Leistungskurve Laufen</h3><div id="pcBox"></div></div>
     <div class="card" style="margin-top:16px">${cardHead('tbl')}<div class="tbl-wrap tall" id="ch-tbl"></div></div>`;
+  focusCard($('#focusBox'), { aidPath: a.id, acts, set, from, to, grey: S.range.preset ? ['6M', '1J', '2J'].includes(S.range.preset) : (parseYmd(to) - parseYmd(from)) / 864e5 + 1 > 91 });
   ecoCards($('#ecoBox'), acts.filter(x => x.start_date_local.slice(0, 10) >= from && x.start_date_local.slice(0, 10) <= to), 'g2', [parseYmd(from), parseYmd(to)], set);
   powerCurveCard($('#pcBox'), a.id, from, to);
   if ($('#toThr')) $('#toThr').onclick = () => setTab('thr');
@@ -1541,6 +1549,205 @@ function renderSettings() {
 // Ordner "OSL-Coaching Daten": "_settings" (JSON) und "Plan: <Name>" (Plan-Vorlagen als JSON).
 const DATA_FOLDER = 'OSL-Coaching Daten';
 const parseJson = t => { try { return JSON.parse(t || '{}'); } catch { return {}; } };
+// =============== Trainingsfokus (Intensitäts-Fünfeck, siehe Spezifikation) ===============
+const FOCUS_CATS = ['Grundlage', 'Tempo', 'Schwelle', 'VO2max', 'Speed'];
+// App-Zone -> Kategorie (0 Grundlage … 4 Speed). 7 intervals-Zonen Z1, Z2, Z3, Z4, Z5a, Z5b, Z5c (bestätigte Variante A)
+const FOCUS_ZONE_MAP_7 = [0, 0, 1, 2, 3, 3, 4];
+// Andere Zonenzahl: Zonenmitte in % der Schwelle (oberste Zone: Untergrenze) gegen diese Grenzen
+const FOCUS_CUTS = [87.7, 94.3, 100, 111.5];
+// Wochenlimits je Kategorie: [M5h, k, Untergrenze U, Deckel D] in Minuten
+const FOCUS_LIM = { Tempo: [75, 0.9, 30, 90], Schwelle: [48, 0.6, 30, 81], VO2max: [32, 0.5, 16, 45], Speed: [6, 0.6, 3, 8] };
+const FOCUS_MIN_BASE = 70;
+const FOCUS_COL = { ok: 'var(--accent)', warn: '#F6B73C', bad: '#F04848', info: '#9AA0A8' };
+const FOCUS_DAYS = { '4W': 28, '3M': 91, '6M': 182, '1J': 364 };
+function focusZoneCats(z) {
+  if (z.length === 7) return FOCUS_ZONE_MAP_7.slice();
+  return z.map((u, i) => { const lo = i ? z[i - 1] : 0, m = i === z.length - 1 ? lo : (lo + u) / 2; let c = 0; while (c < 4 && m >= FOCUS_CUTS[c]) c++; return c; });
+}
+function focusLimits(Tw) {
+  const out = {};
+  for (const [k, [M, e, U, D]] of Object.entries(FOCUS_LIM)) {
+    if (!(Tw > 0)) { out[k] = 0; continue; }
+    const T = Math.min(720, Math.max(120, Tw)); let L = Math.min(Math.max(M * Math.pow(T / 300, e), U), D);
+    if (Tw < 120) L *= Tw / 120; out[k] = L;
+  }
+  return out;
+}
+// blocks: [{ Tw, ist: { Tempo, Schwelle, VO2max, Speed } }] (Minuten) -> Werte, Status, Wochenzählung
+function focusModel(blocks) {
+  const I = FOCUS_CATS.slice(1), Y = blocks.filter(b => b.Tw > 0).length, T = blocks.reduce((s, b) => s + b.Tw, 0);
+  const st = r => r > 110 ? 'bad' : r > 100 ? 'warn' : 'ok', cats = {};
+  for (const k of I) {
+    const ist = blocks.reduce((s, b) => s + (b.ist[k] || 0), 0), L = blocks.reduce((s, b) => s + focusLimits(b.Tw)[k], 0);
+    const fill = L > 0 ? ist / L * 100 : 0, shown = Math.round(fill);
+    const X = blocks.filter(b => { const l = focusLimits(b.Tw)[k]; return b.Tw > 0 && l > 0 && Math.round((b.ist[k] || 0) / l * 100) > 110; }).length;
+    cats[k] = { ist, L, fill, shown, status: st(shown), X };
+  }
+  const G = T - I.reduce((s, k) => s + cats[k].ist, 0), share = T > 0 ? G / T * 100 : 0, gShown = Math.round(share);
+  const gX = blocks.filter(b => b.Tw > 0 && Math.round((b.Tw - I.reduce((s, k) => s + (b.ist[k] || 0), 0)) / b.Tw * 100) < FOCUS_MIN_BASE).length;
+  cats.Grundlage = { ist: G, T, fill: share, shown: gShown, status: gShown < FOCUS_MIN_BASE ? 'bad' : 'ok', X: gX };
+  return { T, Y, n: blocks.length, cats };
+}
+// Warntexte (Reihenfolge: rot, dann gelb); grey = Rückblick (6M/1J): alles grau
+function focusWarnings(M, grey) {
+  if (!M.T) return [];
+  const I = FOCUS_CATS.slice(1), rows = [], anyHot = I.some(k => M.cats[k].status !== 'ok');
+  for (const k of I) { const c = M.cats[k]; if (c.status === 'ok' && !c.X) continue;
+    let t = c.status === 'bad' ? `${k}: Limit überschritten (${c.shown} %)` : c.status === 'warn' ? `${k}: knapp über dem Limit (${c.shown} %)` : `${k}: im Schnitt im Rahmen`;
+    if (c.X) t += ` · in ${c.X} von ${M.Y} Wochen über dem Limit`;
+    rows.push({ t, lvl: c.status === 'bad' ? 'bad' : 'warn' }); }
+  const g = M.cats.Grundlage;
+  if (g.status === 'bad' || g.X) {
+    let t = g.status === 'bad' ? (anyHot ? `Grundlage: nur ${g.shown} % der Laufzeit – Gesamtintensität zu hoch` : `Grundlage: nur ${g.shown} % der Laufzeit – kein Bereich über dem Limit, aber zu viele Bereiche gleichzeitig. Setz Schwerpunkte.`) : 'Grundlage: im Schnitt im Rahmen';
+    if (g.X) t += ` · in ${g.X} von ${M.Y} Wochen unter ${FOCUS_MIN_BASE} %`;
+    rows.push({ t, lvl: g.status === 'bad' ? 'bad' : 'warn' });
+  }
+  rows.sort((a, b) => (a.lvl === 'bad' ? 0 : 1) - (b.lvl === 'bad' ? 0 : 1));
+  return rows.map(r => ({ t: r.t, col: grey ? FOCUS_COL.info : FOCUS_COL[r.lvl] }));
+}
+const fmtInt = v => Math.round(v).toLocaleString('de-DE');
+const fmtWeek = min => { const m = Math.round(min), h = Math.floor(m / 60), r = m % 60; return m < 60 ? `${m} min` : r ? `${h} h ${r} min` : `${h} h`; };
+// ---- Daten: Klassifizierung je Lauf (gecacht im Gerät) ----
+const isFocusRun = a => /Run/.test(a.type || '') && a.isRace !== true; // Laufen inkl. Laufband/Trail, ohne Wettkämpfe (isRace kommt später)
+const gapFactor = g => { g = Math.max(-0.45, Math.min(0.45, g)); return (155.4 * g ** 5 - 30.4 * g ** 4 - 43.3 * g ** 3 + 46.3 * g ** 2 + 19.5 * g + 3.6) / 3.6; }; // Minetti
+function focusCfg(R, basis) {
+  if (!R?.threshold_pace || !R.pace_zones?.length) return { err: 'Zonen in den Einstellungen hinterlegen' };
+  if (basis === 'power' && !(R.ftp > 0)) return { err: 'Für die Basis Leistung fehlt der Schwellenwert (CP). Zonen in den Einstellungen hinterlegen' };
+  const zones = R.pace_zones; // Leistungszonen der App = gleiche Prozent der Schwelle, bezogen auf CP
+  return { basis, thr: R.threshold_pace, cp: R.ftp, zones, cats: focusZoneCats(zones), sig: ['f1', basis, R.threshold_pace.toFixed(3), R.ftp || 0, zones.join(',')].join(':') };
+}
+const zoneCat = (cfg, val, ref) => { const pct = val / ref * 100; let z = cfg.zones.findIndex(u => pct <= u); if (z < 0) z = cfg.zones.length - 1; return cfg.cats[z]; };
+// Minuten je Kategorie aus Sekundendaten: 10-s-Mittel, nur in Bewegung, Abschnitte < 10 s zählen zur vorherigen Zone
+function focusFromSamples(cfg, t, v, val, ref) {
+  const n = Math.min(t.length, v.length, val.length); if (!n) return null;
+  const sm = new Array(n); let j = 0, sum = 0, cnt = 0;
+  for (let i = 0; i < n; i++) { sum += val[i] || 0; cnt++; while (t[i] - t[j] >= 10) { sum -= val[j] || 0; cnt--; j++; } sm[i] = sum / cnt; }
+  const seg = [];
+  for (let i = 1; i < n; i++) { const dt = Math.min(10, t[i] - t[i - 1]); if (!(dt > 0) || !(v[i] > 0.8)) continue;
+    const c = zoneCat(cfg, sm[i], ref); if (seg.length && seg[seg.length - 1][0] === c) seg[seg.length - 1][1] += dt; else seg.push([c, dt]); }
+  if (!seg.length) return null;
+  const out = [0, 0, 0, 0, 0]; let prev = null;
+  for (const [c, d] of seg) { const cc = d < 10 && prev != null ? prev : c; out[cc] += d / 60; prev = cc; }
+  return out;
+}
+async function focusActivity(a, cfg) {
+  const key = `fz.${a.id}`, c = LS.get(key, null); if (c && c.s === cfg.sig) return c.v;
+  let r = null, ok = false;
+  try {
+    const st = (await iv('GET', `activity/${a.id}/streams?types=time,velocity_smooth,altitude,distance${cfg.basis === 'power' ? ',watts' : ''}`)) || []; ok = true;
+    const g = k => st.find(x => x.type === k)?.data || [], t = g('time'), v = g('velocity_smooth'), w = g('watts');
+    if (t.length && v.length) {
+      if (cfg.basis === 'power' && w.some(x => x > 0)) r = focusFromSamples(cfg, t, v, w, cfg.cp);
+      else { // steigungsbereinigte Geschwindigkeit (GAP), ohne Höhendaten die gemessene
+        const alt = g('altitude'), dist = g('distance'), hasAlt = alt.length === v.length && dist.length === v.length && alt.some(x => x !== alt[0]);
+        let k = 0; const gv = v.map((x, i) => { if (!hasAlt) return x; while (t[i] - t[k] > 10) k++; const dd = dist[i] - dist[k]; return dd > 3 ? x * gapFactor((alt[i] - alt[k]) / dd) : x; });
+        r = focusFromSamples(cfg, t, v, gv, cfg.thr);
+      }
+    }
+    if (!r) { // keine Sekundendaten: Lap-Durchschnitte
+      const L = (await iv('GET', `activity/${a.id}/intervals`))?.icu_intervals || [];
+      for (const l of L) { const pw = cfg.basis === 'power' && l.average_watts > 0, val = pw ? l.average_watts : l.average_speed;
+        if (!(val > 0) || !(l.moving_time > 0)) continue; r = r || [0, 0, 0, 0, 0]; r[zoneCat(cfg, val, pw ? cfg.cp : cfg.thr)] += l.moving_time / 60; }
+    }
+  } catch { if (!ok) return [0, 0, 0, 0, 0]; } // Netzfehler: nicht cachen
+  r = r || [0, 0, 0, 0, 0]; // nicht klassifizierbar: alles Grundlage
+  LS.set(key, { s: cfg.sig, v: r }); return r;
+}
+// Zeitraum in 7-Tage-Blöcke rückwärts ab "to", Block 1 = to und die 6 Tage davor
+async function focusCompute(acts, R, basis, from, to, onProgress) {
+  const cfg = focusCfg(R, basis); if (cfg.err) return { err: cfg.err };
+  const end = parseYmd(to), days = Math.round((end - parseYmd(from)) / 864e5) + 1, n = Math.max(1, Math.round(days / 7)), start = ymd(addDays(end, -7 * n + 1));
+  const runs = acts.filter(a => isFocusRun(a) && a.start_date_local.slice(0, 10) >= start && a.start_date_local.slice(0, 10) <= to);
+  const res = {}; let done = 0;
+  await pool(runs, 4, async a => { res[a.id] = await focusActivity(a, cfg); onProgress && onProgress(++done, runs.length); });
+  const K = FOCUS_CATS.slice(1), blocks = Array.from({ length: n }, () => ({ Tw: 0, ist: { Tempo: 0, Schwelle: 0, VO2max: 0, Speed: 0 } }));
+  for (const a of runs) {
+    const i = Math.floor(Math.round((end - parseYmd(a.start_date_local.slice(0, 10))) / 864e5) / 7); if (i < 0 || i >= n) continue;
+    const T = (a.moving_time || 0) / 60; let ints = res[a.id].slice(1); const sum = ints.reduce((x, y) => x + y, 0);
+    if (sum > T && sum > 0) ints = ints.map(x => x * T / sum);
+    blocks[i].Tw += T; K.forEach((k, j) => blocks[i].ist[k] += ints[j]);
+  }
+  return Object.assign(focusModel(blocks), { basis });
+}
+// Einstellung je Athlet ("Basis für Trainingsfokus") im intervals-Konto des Athleten: Ordner "OSL-Coaching Daten", Eintrag "_opts"
+async function athStore(aidPath) {
+  S._opts = S._opts || {}; if (S._opts[aidPath]) return S._opts[aidPath];
+  const f = ((await iv('GET', `athlete/${aidPath}/folders`).catch(() => [])) || []).find(x => x.type === 'FOLDER' && x.name === DATA_FOLDER);
+  const it = (f?.children || []).find(x => x.name === '_opts');
+  return (S._opts[aidPath] = { f, it, data: it ? parseJson(it.description) : {} });
+}
+async function setAthOpt(aidPath, key, val) {
+  const o = await athStore(aidPath); o.data[key] = val;
+  if (!o.f) o.f = await iv('POST', `athlete/${aidPath}/folders`, { type: 'FOLDER', name: DATA_FOLDER });
+  const body = { name: '_opts', type: 'Other', description: JSON.stringify(o.data) };
+  if (o.it) await iv('PUT', `athlete/${aidPath}/workouts/${o.it.id}`, body); else o.it = await iv('POST', `athlete/${aidPath}/workouts`, Object.assign({ folder_id: o.f.id }, body));
+}
+// ---- Darstellung ----
+function focusSvg(M) {
+  const W = 410, H = 382, cx = 205, cy = 202, R = 100, ang = i => (-90 + 72 * i) * Math.PI / 180;
+  const P = (i, r) => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))], mid = (i, j, r) => { const a = P(i, r), b = P(j, r); return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+  const pts = arr => arr.map(p => p.map(x => x.toFixed(1)).join(',')).join(' '), ring = r => pts([0, 1, 2, 3, 4].map(i => P(i, r)));
+  const prv = i => (i + 4) % 5, nxt = i => (i + 1) % 5, segment = (i, r1, r2) => pts([mid(prv(i), i, r1), P(i, r1), mid(i, nxt(i), r1), mid(i, nxt(i), r2), P(i, r2), mid(prv(i), i, r2)]);
+  const col = st => FOCUS_COL[st] || FOCUS_COL.ok, C = M?.cats || {}, has = M && M.T > 0;
+  const val = i => { const k = FOCUS_CATS[i], c = C[k]; if (!has || !c) return 0; return i ? Math.min(140, c.fill) : Math.min(100, c.fill); };
+  let g = '';
+  // Grenzbereiche außen (nicht für Grundlage)
+  for (let i = 1; i < 5; i++) { const hot = has && C[FOCUS_CATS[i]].status !== 'ok';
+    g += `<polygon points="${segment(i, R, 1.1 * R)}" fill="${FOCUS_COL.warn}" opacity="${hot ? .5 : .1}"/><polygon points="${segment(i, 1.1 * R, 1.4 * R)}" fill="${FOCUS_COL.bad}" opacity="${hot ? .5 : .1}"/>
+      <polyline points="${pts([mid(prv(i), i, 1.1 * R), P(i, 1.1 * R), mid(i, nxt(i), 1.1 * R)])}" fill="none" stroke="${FOCUS_COL.bad}" stroke-width="1.4" ${hot ? '' : 'stroke-dasharray="4 3"'} opacity="${hot ? .9 : .6}"/>`; }
+  g += [.25, .5, .75, 1].map(f => `<polygon points="${ring(R * f)}" class="rg"/>`).join('') + [0, 1, 2, 3, 4].map(i => { const [x, y] = P(i, R); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="rg"/>`; }).join('');
+  const gBad = has && C.Grundlage.status === 'bad', r70 = R * FOCUS_MIN_BASE / 100;
+  if (gBad) g += `<polygon points="${pts([[cx, cy], mid(4, 0, r70), P(0, r70), mid(0, 1, r70)])}" fill="${FOCUS_COL.bad}" opacity=".35"/>`;
+  if (has) { const sh = pts([0, 1, 2, 3, 4].map(i => P(i, Math.max(3, R * val(i) / 100))));
+    g += `<polygon points="${sh}" class="rs"/>` + [0, 1, 2, 3, 4].map(i => { const [x, y] = P(i, Math.max(3, R * val(i) / 100)); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${col(C[FOCUS_CATS[i]].status)}"/>`; }).join(''); }
+  // Untergrenze Grundlage 70 % (über dem Polygon)
+  const [mx, my] = P(0, r70), mc = gBad ? FOCUS_COL.bad : FOCUS_COL.ok;
+  g += `<line x1="${cx}" y1="${cy}" x2="${mx}" y2="${my.toFixed(1)}" stroke="${mc}" stroke-width="${gBad ? 6 : 4}" opacity="${gBad ? 1 : .35}" stroke-linecap="round"/>
+    <line x1="${mx - 8}" y1="${my.toFixed(1)}" x2="${mx + 8}" y2="${my.toFixed(1)}" stroke="${mc}" stroke-width="2.5" opacity="${gBad ? 1 : .6}"/>
+    <text x="${mx + 12}" y="${(my + 4).toFixed(1)}" class="rv" fill="${mc}" style="fill:${mc}">min. ${FOCUS_MIN_BASE} %</text>`;
+  // Beschriftung, drei Zeilen; antippbar
+  // Beschriftung zentriert: oben über der Spitze, seitlich über, unten unter der äußeren Ecke
+  g += [0, 1, 2, 3, 4].map(i => { const k = FOCUS_CATS[i], c = C[k], [ox, oy] = P(i, 1.4 * R), anc = 'middle', x = ox;
+    const y = i === 0 ? oy - 44 : i === 1 || i === 4 ? oy - 52 : oy + 22;
+    const l2 = has ? (i ? `${c.shown} % vom Limit` : `${c.shown} % der Laufzeit`) : '–', l3 = has ? `${fmtInt(c.ist)} min` : '';
+    const c2 = has && c.status !== 'ok' ? col(c.status) : 'var(--muted)';
+    return `<g class="fax" data-fi="${i}" style="cursor:pointer"><rect x="${x - 62}" y="${y - 17}" width="124" height="54" fill="transparent"/>
+      <text x="${x.toFixed(0)}" y="${y.toFixed(0)}" text-anchor="${anc}" class="rl">${k}</text>
+      <text x="${x.toFixed(0)}" y="${(y + 17).toFixed(0)}" text-anchor="${anc}" class="rv" style="fill:${c2}">${l2}</text>
+      <text x="${x.toFixed(0)}" y="${(y + 33).toFixed(0)}" text-anchor="${anc}" class="rv">${l3}</text></g>`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="radar focus" role="img" aria-label="Trainingsfokus">${g}</svg>`;
+}
+// Karte: Basis-Umschalter, Fünfeck, Warntexte, Erklärung, Detail beim Antippen
+async function focusCard(el, { aidPath, acts, set, from, to, grey }) {
+  if (!el) return;
+  const R = set?.Run, opts = await athStore(aidPath).catch(() => ({ data: {} }));
+  const powerOk = R?.ftp > 0 && acts.some(a => isFocusRun(a) && (a.icu_average_watts > 0 || a.device_watts));
+  // Coach-App: zusätzlich in den eigenen Coach-Einstellungen gespeichert (falls die Athleten-Bibliothek nicht beschreibbar ist)
+  const coachSide = aidPath !== '0' && typeof athSet === 'function' && S.store;
+  const want = (coachSide && athSet(aidPath, 'focusBasis', null)) || opts.data.focusBasis;
+  const basis = want === 'power' && powerOk ? 'power' : 'pace';
+  el.innerHTML = `<div class="row" style="justify-content:space-between;gap:8px;margin-bottom:6px"><span class="small t2">Basis</span>
+      <div class="seg" id="fcBasis"><button data-b="pace" class="${basis === 'pace' ? 'on' : ''}">Pace</button><button data-b="power" class="${basis === 'power' ? 'on' : ''}" ${powerOk ? '' : 'disabled title="Braucht Leistungsdaten und CP aus derselben Quelle"'}>Leistung</button></div></div>
+    ${powerOk ? '' : '<div class="small muted" style="margin-bottom:6px">Leistung ist erst wählbar, wenn Leistungsdaten und ein CP aus derselben Quelle vorliegen (z. B. Stryd mit Stryd-CP).</div>'}
+    <div id="fcBody"><div class="small muted"><span class="spin"></span> Berechne Zeit in den Zonen …</div></div>`;
+  $$('#fcBasis button', el).forEach(b => b.onclick = async () => { if (b.disabled || b.classList.contains('on')) return;
+    let ok = false;
+    try { await setAthOpt(aidPath, 'focusBasis', b.dataset.b); ok = true; } catch {}
+    if (coachSide) { try { await setAthSet(aidPath, 'focusBasis', b.dataset.b); ok = true; } catch {} }
+    if (!ok) { status('Einstellung konnte nicht gespeichert werden.', true); return; }
+    focusCard(el, { aidPath, acts, set, from, to, grey }); });
+  const M = await focusCompute(acts, R, basis, from, to, (d, n) => { const s = $('#fcBody .small', el); if (s) s.innerHTML = `<span class="spin"></span> Berechne Zeit in den Zonen … ${d}/${n}`; });
+  const body = $('#fcBody', el); if (!body || !document.body.contains(body)) return;
+  if (M.err) { body.innerHTML = focusSvg(null) + `<div class="small muted" style="text-align:center">${esc(M.err)}</div>`; return; }
+  if (!M.T) { body.innerHTML = focusSvg(null) + '<div class="small muted" style="text-align:center">Keine Laufeinheiten im Zeitraum</div>'; return; }
+  const warn = focusWarnings(M, grey);
+  body.innerHTML = focusSvg(M) + `<div class="fc-detail small" id="fcDet"></div>`
+    + (warn.length ? `<div class="fc-warn">${warn.map(w => `<div style="color:${w.col}">${esc(w.t)}</div>`).join('')}</div>` : '')
+    + `<div class="small muted" style="margin-top:8px">Tempo, Schwelle, VO2max und Speed: wie viel du von deinem sinnvollen Limit ausgeschöpft hast (100 % = Limit erreicht, rote Zone = zu viel). Grundlage: Anteil an deiner gesamten Laufzeit, mindestens 70 % (rote Zone innen = zu wenig). Basis: Zeit in deinen ${basis === 'power' ? 'Leistungs' : 'Pace'}-Zonen, nur Laufen, ohne Wettkämpfe; in diesem Zeitraum Ø ${fmtWeek(M.T / M.n)} pro Woche.</div>`;
+  $$('.fax', body).forEach(gx => gx.onclick = () => { const k = FOCUS_CATS[+gx.dataset.fi], c = M.cats[k];
+    $('#fcDet', body).innerHTML = k === 'Grundlage' ? `<b>Grundlage:</b> ${fmtInt(c.ist)} / ${fmtInt(M.T)} min Laufzeit · in ${c.X} von ${M.Y} Wochen unter ${FOCUS_MIN_BASE} %`
+      : `<b>${k}:</b> ${fmtInt(c.ist)} / ${fmtInt(c.L)} min (Ist / Limit) · in ${c.X} von ${M.Y} Wochen über dem Limit`; });
+}
 // =============== Push-Benachrichtigungen ===============
 // Jedes Gerät meldet sich mit einer Empfänger-Adresse an; die liegt im eigenen intervals-Konto
 // (Ordner "OSL-Coaching Daten", Eintrag "_push"). scripts/notify.py schickt von dort alle 5 Minuten.
